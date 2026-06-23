@@ -15,3 +15,13 @@ def test_load_config_null_model_in_yaml(tmp_path: Path) -> None:
     assert result["model"] == "LiquidAI/LFM2.5-Embedding-350M"
     assert result["model"] is not None
     assert "None" not in result["model"]
+
+
+def test_resolve_sources_yaml_docstring_has_sections() -> None:
+    """Must have Args: and Returns: sections per code-documentation.md."""
+    from knowledge.config import resolve_sources_yaml
+
+    doc = resolve_sources_yaml.__doc__
+    assert doc is not None
+    assert "Args:" in doc
+    assert "Returns:" in doc

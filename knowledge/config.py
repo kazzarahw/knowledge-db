@@ -67,10 +67,16 @@ def ensure_data_dir(data_dir: Path) -> Path:
 
 
 def resolve_sources_yaml(config_dir: str | None) -> Path:
-    """Resolve sources.yaml path. Falls back to cwd with warning.
+    """Resolve sources.yaml path with config-dir fallback.
 
     Checks *config_dir*/sources.yaml first, then cwd/sources.yaml.
-    Prints a warning on stderr when falling back.
+    Prints a warning on stderr when falling back to cwd.
+
+    Args:
+        config_dir: Path to config directory. May be None (cwd-only).
+
+    Returns:
+        Resolved path to sources.yaml (may not exist — caller validates).
     """
     if config_dir:
         sp = Path(config_dir) / "sources.yaml"
