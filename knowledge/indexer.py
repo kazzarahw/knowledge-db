@@ -221,6 +221,13 @@ def cmd_index(
 
     def _on_sigint(signum, frame):
         print("\nInterrupted. Index is partial. Run 'kdb index' to resume.")
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('index_status', 'interrupted')"
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
         conn.close()
         sys.exit(130)
 

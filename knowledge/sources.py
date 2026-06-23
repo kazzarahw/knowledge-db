@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -108,18 +107,3 @@ def load_sources(path: Path) -> List[Source]:
         sources.append(source)
 
     return sources
-
-
-def _source_signature(source: Source) -> str:
-    """Return a content-based hash for local sources (mtime-based)."""
-    if source.type != "local" or not source.path:
-        return source.name
-    p = Path(source.path)
-    if not p.exists():
-        return source.name
-    stat = p.stat()
-    h = hashlib.sha256()
-    h.update(str(p.resolve()).encode())
-    h.update(str(stat.st_mtime).encode())
-    h.update(str(stat.st_size).encode())
-    return h.hexdigest()
