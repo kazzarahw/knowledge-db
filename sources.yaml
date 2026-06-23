@@ -1,0 +1,20 @@
+# Sources manifest for knowledge-db (kdb)
+# Each source is indexed and made searchable.
+sources:
+  - name: grimoire-docs
+    url: https://github.com/user/grimoire-docs.git
+    branch: main
+    title: "Grimoire Documentation"
+    sparse: ["docs/"]
+    index_ext: [".md", ".rst"]
+
+  - name: local-project-docs
+    type: local
+    path: /path/to/your/docs
+    title: "Local Project Docs"
+
+  - name: pentest-notebooks
+    type: notebooks
+    url: https://github.com/user/pentest-lab.git
+    title: "Pentest Lab Notebooks"
+    subdir: notebooks/
