@@ -15,6 +15,7 @@ def test_get_connection_wal(tmp_path):
     cur2 = conn.execute("PRAGMA foreign_keys")
     assert cur2.fetchone()[0] == 1
     assert conn.row_factory is sqlite3.Row
+    conn.close()
 
 
 def test_ensure_schema_creates_tables(tmp_path):
@@ -29,6 +30,7 @@ def test_ensure_schema_creates_tables(tmp_path):
     assert "section_vectors" in names
     assert "source_state" in names
     assert "index_meta" in names
+    conn.close()
 
 
 def test_ensure_schema_vec0_dim(tmp_path):
@@ -39,6 +41,7 @@ def test_ensure_schema_vec0_dim(tmp_path):
         "SELECT sql FROM sqlite_master WHERE name='section_vectors' AND type='table'"
     ).fetchone()[0]
     assert "FLOAT[768]" in sql
+    conn.close()
 
 
 def test_ensure_schema_idempotent(tmp_path):
@@ -46,6 +49,7 @@ def test_ensure_schema_idempotent(tmp_path):
     conn = get_connection(db_path)
     ensure_schema(conn, dim=1024)
     ensure_schema(conn, dim=1024)
+    conn.close()
 
 
 def test_column_definitions(tmp_path):
@@ -80,3 +84,4 @@ def test_column_definitions(tmp_path):
     assert cols_ss["indexed_at"][2] == "TEXT"
     assert cols_ss["indexed_at"][3] == 1
     assert "datetime" in cols_ss["indexed_at"][4]
+    conn.close()
