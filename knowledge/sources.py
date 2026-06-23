@@ -33,6 +33,8 @@ class Source:
     index_ext: tuple[str, ...] = field(
         default_factory=lambda: (".md", ".mdx", ".rst", ".txt", ".py")
     )
+    category: str = ""
+    docs_dir: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.type not in ("git", "local", "notebooks"):
@@ -88,6 +90,8 @@ def load_sources(path: Path) -> List[Source]:
         index_ext = tuple(
             entry.get("index_ext", (".md", ".mdx", ".rst", ".txt", ".py"))
         )
+        category = entry.get("category", "")
+        docs_dir = entry.get("docs_dir")
 
         source = Source(
             name=name,
@@ -98,6 +102,8 @@ def load_sources(path: Path) -> List[Source]:
             branch=branch,
             sparse=sparse,
             index_ext=index_ext,
+            category=category,
+            docs_dir=docs_dir,
         )
         sources.append(source)
 

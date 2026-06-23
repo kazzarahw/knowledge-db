@@ -59,6 +59,22 @@ class TestSource:
         with pytest.raises(AttributeError):
             s.name = "changed"  # type: ignore[misc]
 
+    def test_default_category_and_docs_dir(self):
+        s = Source(name="test", type="git", url="https://github.com/user/repo.git")
+        assert s.category == ""
+        assert s.docs_dir is None
+
+    def test_custom_category_and_docs_dir(self):
+        s = Source(
+            name="test",
+            type="git",
+            url="https://github.com/user/repo.git",
+            category="docs",
+            docs_dir="docs/",
+        )
+        assert s.category == "docs"
+        assert s.docs_dir == "docs/"
+
 
 class TestLoadSources:
     def test_basic_sources_yaml(self, tmp_path):
@@ -116,3 +132,20 @@ class TestLoadSources:
         sources = load_sources(path)
         assert sources[0].sparse == ("docs/*",)
         assert sources[0].branch == "main"
+
+    def test_category_and_docs_dir_from_yaml(self, tmp_path):
+        path = tmp_path / "sources.yaml"
+        data = {
+            "sources": [
+                {
+                    "name": "categorized",
+                    "url": "https://github.com/user/repo.git",
+                    "category": "documentation",
+                    "docs_dir": "docs/",
+                },
+            ]
+        }
+        path.write_text(yaml.dump(data))
+        sources = load_sources(path)
+        assert sources[0].category == "documentation"
+        assert sources[0].docs_dir == "docs/"
