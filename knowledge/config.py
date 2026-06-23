@@ -33,7 +33,7 @@ def load_config(config_dir: Path) -> dict[str, str | None]:
         raw_model = embed.get("model", DEFAULT_MODEL)
         raw_device = embed.get("device")
         return {
-            "model": str(raw_model) if not isinstance(raw_model, str) else raw_model,
+            "model": raw_model if isinstance(raw_model, str) else DEFAULT_MODEL,
             "device": str(raw_device) if isinstance(raw_device, str) else None,
         }
     except Exception:
