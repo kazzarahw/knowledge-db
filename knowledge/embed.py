@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 import numpy as np
 
@@ -30,12 +30,21 @@ def get_embedder(
 
         cfg = load_config(Path(config_dir))
         if model_name is None:
-            model_name = str(cfg.get("model", "LiquidAI/LFM2.5-Embedding-350M"))
+            cfg_model = cfg.get("model")
+            model_name = (
+                str(cfg_model)
+                if cfg_model is not None
+                else "LiquidAI/LFM2.5-Embedding-350M"
+            )
         if device is None:
             device = cfg.get("device")
     if model_name is None:
         model_name = "LiquidAI/LFM2.5-Embedding-350M"
-    if _embedder is None or _embedder.model_name != model_name:
+    if (
+        _embedder is None
+        or _embedder.model_name != model_name
+        or _embedder._device != device
+    ):
         _embedder = SentenceTransformerEmbedder(model_name, device=device)
     return _embedder
 
@@ -50,11 +59,12 @@ def _resolve_device() -> str:
         "No CUDA-capable GPU detected — falling back to CPU. "
         "Embedding will be significantly slower (~5-10x). "
         "Install PyTorch with CUDA support for GPU acceleration.",
-        stacklevel=2,
+        stacklevel=3,
     )
     return "cpu"
 
 
+@runtime_checkable
 class Embedder(Protocol):
     """Protocol for embedding models. Must provide dim, model_name, embed(), embed_query()."""
 
@@ -70,13 +80,12 @@ class Embedder(Protocol):
         ...
 
 
-class SentenceTransformerEmbedder:
+class SentenceTransformerEmbedder(Embedder):
     """Sentence-transformers based embedder.
 
-    Prompt handling is delegated to the model itself via
-    encode_query() / encode_document(). The model loads prompts from
-    config_sentence_transformers.json at init time. Models without
-    prompts (e.g., BGE) encode text as-is.
+    Prompt handling uses model's prompt config: embed_query()
+    passes prompt_name="query" when the model defines query prompts.
+    Models without prompts (e.g., all-MiniLM-L6-v2) encode raw text.
     """
 
     dim: int
@@ -96,6 +105,7 @@ class SentenceTransformerEmbedder:
             trust_remote_code=True,
         )
         self.model_name = model_name
+        self._device = resolved
         self.dim = self._model.get_sentence_embedding_dimension()
 
     def embed(self, texts: list[str]) -> np.ndarray:
