@@ -1,19 +1,546 @@
-# Sources manifest for knowledge-db (kdb)
-# Each source is indexed and made searchable.
+# Knowledge-db (kdb) source manifest.
+#
+# Each source is cloned by `kdb fetch` into data/sources/<name>,
+# then chunked and indexed for semantic search by `kdb index`.
+#
+# Fields:
+#   name      : unique slug (also the clone dir name)         [required]
+#   type      : git | local | notebooks                        [default: git]
+#   url       : git URL (required for git, notebooks)          [conditional]
+#   path      : filesystem path (required for type: local)     [conditional]
+#   title     : human label shown in the UI                    [optional]
+#   category  : grouping shown/filtered in the UI              [optional]
+#   branch    : git branch to checkout                         [optional]
+#   docs_dir  : subdir within repo to index                    [optional]
+#   sparse    : paths for git sparse-checkout (huge repos)     [optional]
+#   index_ext : extra file extensions to index                 [optional]
+#
+# To add your own docs: add a `type: local` entry here pointing at a path,
+# or drop markdown into an existing local source directory.
+
 sources:
-  - name: grimoire-docs
-    url: https://github.com/user/grimoire-docs.git
-    branch: main
-    title: "Grimoire Documentation"
-    sparse: ["docs/"]
-    index_ext: [".md", ".rst"]
 
-  - name: local-project-docs
+  # ---- Broad aggregate wikis ---------------------------------------
+  - name: hacktricks
+    title: HackTricks
+    url: https://github.com/HackTricks-wiki/hacktricks
+    category: wikis
     type: local
-    path: /path/to/your/docs
-    title: "Local Project Docs"
+    path: /tmp/gt/ht
+  - name: hacktricks-cloud
+    title: HackTricks Cloud
+    url: https://github.com/HackTricks-wiki/hacktricks-cloud
+    category: wikis
+  - name: payloadsallthethings
+    title: PayloadsAllTheThings
+    url: https://github.com/swisskyrepo/PayloadsAllTheThings
+    category: wikis
+  - name: pentest-book
+    title: six2dez Pentest Book
+    url: https://github.com/six2dez/pentest-book
+    category: wikis
+  - name: the-hacker-recipes
+    title: The Hacker Recipes
+    url: https://github.com/ShutdownRepo/the-hacker-recipes
+    category: wikis
+  - name: hacknetics
+    title: Hacknetics
+    url: https://github.com/ice-wzl/Hacknetics
+    category: wikis
+  - name: redteam-tools
+    title: RedTeam-Tools (A-poc)
+    url: https://github.com/A-poc/RedTeam-Tools
+    category: wikis
 
-  - name: pentest-notebooks
-    type: notebooks
-    url: https://github.com/user/pentest-lab.git
-    title: "Pentest Lab Notebooks"
+  # ---- Active Directory / internal ---------------------------------
+  - name: internalallthethings
+    title: InternalAllTheThings
+    url: https://github.com/swisskyrepo/InternalAllTheThings
+    category: ad-internal
+  - name: ired-team
+    title: ired.team (RedTeaming Tactics)
+    url: https://github.com/mantvydasb/RedTeaming-Tactics-and-Techniques
+    category: ad-internal
+  - name: ocd-mindmaps
+    title: OCD mindmaps
+    url: https://github.com/Orange-Cyberdefense/ocd-mindmaps
+    category: ad-internal
+
+  # ---- Command & Control -------------------------------------------
+  - name: sliver
+    title: Sliver C2
+    url: https://github.com/BishopFox/sliver
+    category: c2
+    docs_dir: docs/sliver-docs/pages
+    sparse: [docs/sliver-docs/pages]
+
+  # ---- Hardware / IoT ----------------------------------------------
+  - name: hardwareallthethings
+    title: HardwareAllTheThings
+    url: https://github.com/swisskyrepo/HardwareAllTheThings
+    category: hardware-iot
+  - name: proxmark3
+    title: Proxmark3 (RRG/Iceman docs)
+    url: https://github.com/RfidResearchGroup/proxmark3
+    category: hardware-iot
+    docs_dir: doc
+    sparse: [doc]
+
+  # ---- Mobile ------------------------------------------------------
+  - name: owasp-mastg
+    title: OWASP MASTG
+    url: https://github.com/OWASP/owasp-mastg
+    category: mobile
+  - name: owasp-masvs
+    title: OWASP MASVS
+    url: https://github.com/OWASP/owasp-masvs
+    category: mobile
+
+  # ---- Web / API ---------------------------------------------------
+  - name: owasp-api-security
+    title: OWASP API Security Top 10
+    url: https://github.com/OWASP/API-Security
+    category: web-api
+  - name: owasp-asvs
+    title: OWASP ASVS
+    url: https://github.com/OWASP/ASVS
+    category: web-api
+  - name: owasp-cheatsheets
+    title: OWASP Cheat Sheet Series
+    url: https://github.com/OWASP/CheatSheetSeries
+    category: web-api
+  - name: owasp-wstg
+    title: OWASP WSTG
+    url: https://github.com/OWASP/wstg
+    category: web-api
+
+  # ---- Living-off-the-land databases -------------------------------
+  - name: gtfoargs
+    title: GTFOArgs
+    url: https://github.com/GTFOArgs/gtfoargs.github.io
+    category: lotl
+    docs_dir: _gtfoargs
+  - name: gtfobins
+    title: GTFOBins
+    url: https://github.com/GTFOBins/GTFOBins.github.io
+    category: lotl
+    docs_dir: _gtfobins
+  - name: lolbas
+    title: LOLBAS
+    url: https://github.com/LOLBAS-Project/LOLBAS
+    category: lotl
+    docs_dir: yml
+  - name: loldrivers
+    title: LOLDrivers
+    url: https://github.com/magicsword-io/LOLDrivers
+    category: lotl
+    docs_dir: yaml
+  - name: loobins
+    title: LOOBins
+    url: https://github.com/infosecB/LOOBins
+    category: lotl
+    docs_dir: LOOBins
+  - name: wadcoms
+    title: WADComs
+    url: https://github.com/WADComs/WADComs.github.io
+    category: lotl
+    docs_dir: _wadcoms
+
+  # ---- Reverse engineering: free books / courses -------------------
+  - name: how2heap
+    title: how2heap (heap exploitation)
+    url: https://github.com/shellphish/how2heap
+    category: re-books
+  - name: mytechnotalent-re
+    title: Reverse Engineering (mytechnotalent)
+    url: https://github.com/mytechnotalent/Reverse-Engineering
+    category: re-books
+  - name: nightmare
+    title: Nightmare (binary exploitation / RE)
+    url: https://github.com/guyinatuxedo/nightmare
+    category: re-books
+
+  # ---- Reverse engineering: tool docs ------------------------------
+  - name: angr-doc
+    title: angr docs (symbolic execution)
+    url: https://github.com/angr/angr-doc
+    category: re-tools
+  - name: ghidra
+    title: Ghidra (in-tree docs)
+    url: https://github.com/NationalSecurityAgency/ghidra
+    category: re-tools
+    docs_dir: GhidraDocs
+    sparse: [GhidraDocs]
+  - name: radare2book
+    title: radare2 book
+    url: https://github.com/radareorg/radare2book
+    category: re-tools
+  - name: rizin-book
+    title: rizin book
+    url: https://github.com/rizinorg/book.git
+    category: re-tools
+
+  # ---- Reverse engineering: awesome indexes ------------------------
+  - name: awesome-android-re
+    title: Awesome Android Reverse Engineering
+    url: https://github.com/user1342/Awesome-Android-Reverse-Engineering
+    category: re-indexes
+  - name: awesome-malware-analysis
+    title: Awesome Malware Analysis
+    url: https://github.com/rshipp/awesome-malware-analysis
+    category: re-indexes
+  - name: awesome-reversing
+    title: Awesome-Reversing (ReversingID)
+    url: https://github.com/ReversingID/Awesome-Reversing
+    category: re-indexes
+  - name: awesome-reversing-tylerha97
+    title: awesome-reversing (tylerha97)
+    url: https://github.com/tylerha97/awesome-reversing
+    category: re-indexes
+  - name: reverse-engineering-wtsxdev
+    title: reverse-engineering (wtsxDev)
+    url: https://github.com/wtsxDev/reverse-engineering
+    category: re-indexes
+
+  # ---- Firmware ----------------------------------------------------
+  - name: awesome-firmware-security
+    title: Awesome Firmware Security
+    url: https://github.com/PreOS-Security/awesome-firmware-security
+    category: firmware
+
+  # ---- OSINT -------------------------------------------------------
+  - name: awesome-osint
+    title: awesome-osint (jivoi)
+    url: https://github.com/jivoi/awesome-osint
+    category: osint
+  - name: awesome-osint-list
+    title: Awesome OSINT List (Astrosp)
+    url: https://github.com/Astrosp/Awesome-OSINT-List
+    category: osint
+  - name: osint-collection
+    title: OSINT Collection (Ph055a)
+    url: https://github.com/Ph055a/OSINT_Collection
+    category: osint
+  - name: osint-framework
+    title: OSINT Framework (clickable tool tree)
+    url: https://github.com/lockfale/OSINT-Framework
+    category: osint
+    docs_dir: public
+    index_ext: [.json]
+  - name: osint-stuff-tool-collection
+    title: OSINT stuff tool collection (cipher387)
+    url: https://github.com/cipher387/osint_stuff_tool_collection
+    category: osint
+  - name: sinwindie-osint
+    title: OSINT by target type + workflows (sinwindie)
+    url: https://github.com/sinwindie/OSINT
+    category: osint
+  - name: tracelabs-awesome-osint
+    title: Trace Labs awesome-osint (missing persons)
+    url: https://github.com/tracelabs/awesome-osint
+    category: osint
+
+  # ---- DFIR / forensics / incident response ------------------------
+  - name: awesome-forensics
+    title: awesome-forensics (cugu)
+    url: https://github.com/cugu/awesome-forensics
+    category: dfir
+  - name: awesome-incident-response
+    title: Awesome Incident Response (meirwah)
+    url: https://github.com/meirwah/awesome-incident-response
+    category: dfir
+  - name: awesome-memory-forensics
+    title: Awesome Memory Forensics (digitalisx)
+    url: https://github.com/digitalisx/awesome-memory-forensics
+    category: dfir
+  - name: cert-irm
+    title: CERT Societe Generale IRM (IR playbooks)
+    url: https://github.com/certsocietegenerale/IRM
+    category: dfir
+  - name: dissect
+    title: Dissect (DFIR framework, NCC Group)
+    url: https://github.com/fox-it/dissect
+    category: dfir
+  - name: forensicartifacts
+    title: ForensicArtifacts (artifact knowledge base)
+    url: https://github.com/ForensicArtifacts/artifacts
+    category: dfir
+  - name: ir-plan-template
+    title: Incident Response Plan template (counteractive)
+    url: https://github.com/counteractive/incident-response-plan-template
+    category: dfir
+  - name: kapefiles
+    title: KapeFiles (KAPE Targets/Modules)
+    url: https://github.com/EricZimmerman/KapeFiles
+    category: dfir
+    index_ext: [.tkape, .mkape]
+  - name: pagerduty-ir
+    title: PagerDuty Incident Response docs
+    url: https://github.com/PagerDuty/incident-response-docs
+    category: dfir
+  - name: plaso
+    title: plaso / log2timeline (super-timeline docs)
+    url: https://github.com/log2timeline/plaso
+    category: dfir
+    docs_dir: docs
+    sparse: [docs]
+  - name: velociraptor
+    title: Velociraptor (VQL artifact docs)
+    url: https://github.com/Velocidex/velociraptor
+    category: dfir
+    docs_dir: docs
+    sparse: [docs]
+  - name: volatility3
+    title: Volatility 3 (memory forensics docs)
+    url: https://github.com/volatilityfoundation/volatility3
+    category: dfir
+    index_ext: [.rst]
+
+  # ---- Fault injection / glitching ---------------------------------
+  - name: chipshouter-picoemp
+    title: ChipSHOUTER-PicoEMP (open-source EMFI)
+    url: https://github.com/newaetech/chipshouter-picoemp
+    category: glitching
+    index_ext: [.ipynb]
+  - name: chipwhisperer
+    title: ChipWhisperer (docs)
+    url: https://github.com/newaetech/chipwhisperer
+    category: glitching
+    docs_dir: docs
+    sparse: [docs]
+    index_ext: [.rst]
+  - name: chipwhisperer-jupyter
+    title: ChipWhisperer Jupyter (Fault101/201 courses)
+    url: https://github.com/newaetech/chipwhisperer-jupyter
+    category: glitching
+    index_ext: [.ipynb]
+  - name: fault-injection-library
+    title: findus / fault-injection-library (PicoGlitcher + ChipWhisperer)
+    url: https://github.com/MKesenheimer/fault-injection-library
+    category: glitching
+    docs_dir: docs
+    sparse: [docs]
+    index_ext: [.rst]
+  - name: faultycat
+    title: Faulty Cat (PicoEMP remix, EMFI + crowbar)
+    url: https://github.com/ElectronicCats/faultycat
+    category: glitching
+  - name: picoglitcher-lpc1343
+    title: PicoGlitcher LPC1343 CRP (SySS)
+    url: https://github.com/SySS-Research/picoglitcher-lpc1343
+    category: glitching
+  - name: simplelink-fi
+    title: SimpleLink-FI (CC2652R1 VFI/SCA/EMFI course)
+    url: https://github.com/KULeuven-COSIC/SimpleLink-FI
+    category: glitching
+    index_ext: [.ipynb]
+
+  # ---- Bluetooth security ------------------------------------------
+  - name: apple_bleee
+    title: apple_bleee (Apple BLE advertisement leaks)
+    url: https://github.com/hexway/apple_bleee
+    category: bluetooth
+  - name: awesome-bluetooth-security
+    title: awesome-bluetooth-security (engn33r)
+    url: https://github.com/engn33r/awesome-bluetooth-security
+    category: bluetooth
+  - name: bias
+    title: BIAS attack (PoC)
+    url: https://github.com/francozappa/bias
+    category: bluetooth
+  - name: ble_ctf
+    title: BLE CTF (ESP32 GATT attack drills)
+    url: https://github.com/hackgnar/ble_ctf
+    category: bluetooth
+  - name: bleah
+    title: bleah (BLE MitM/recon)
+    url: https://github.com/evilsocket/bleah
+    category: bluetooth
+  - name: bluetoolkit
+    title: BlueToolkit (BR/EDR test framework + vuln catalog)
+    url: https://github.com/sgxgsx/BlueToolkit
+    category: bluetooth
+  - name: bluffs
+    title: BLUFFS attack (PoC)
+    url: https://github.com/francozappa/bluffs
+    category: bluetooth
+  - name: braktooth
+    title: BrakTooth (BR/EDR attack family PoCs + ESP32 sniffer)
+    url: https://github.com/Matheus-Garbelini/braktooth_esp32_bluetooth_classic_attacks
+    category: bluetooth
+  - name: btlejack
+    title: BtleJack (BLE sniff/jam/hijack, Micro:bit)
+    url: https://github.com/virtualabs/btlejack
+    category: bluetooth
+  - name: continuity
+    title: Apple Continuity protocol dissection (furiousMAC)
+    url: https://github.com/furiousMAC/continuity
+    category: bluetooth
+  - name: internalblue
+    title: InternalBlue (Broadcom/Cypress firmware research)
+    url: https://github.com/seemoo-lab/internalblue
+    category: bluetooth
+  - name: knob
+    title: KNOB attack (PoC)
+    url: https://github.com/francozappa/knob
+    category: bluetooth
+  - name: mirage
+    title: Mirage (BLE/Zigbee/Mosart/ESB pentest framework, Cayre)
+    url: https://github.com/RCayre/mirage
+    category: bluetooth
+    index_ext: [.rst]
+  - name: openhaystack
+    title: OpenHaystack (Apple Find My RE)
+    url: https://github.com/seemoo-lab/openhaystack
+    category: bluetooth
+  - name: sniffle
+    title: Sniffle (BT5 LE sniffer, NCC Group)
+    url: https://github.com/nccgroup/Sniffle
+    category: bluetooth
+  - name: sweyntooth
+    title: SweynTooth (BLE attack family PoCs)
+    url: https://github.com/Matheus-Garbelini/sweyntooth_bluetooth_low_energy_attacks
+    category: bluetooth
+  - name: ubertooth
+    title: Ubertooth (BR/EDR + LE sniffer)
+    url: https://github.com/greatscottgadgets/ubertooth
+    category: bluetooth
+    index_ext: [.rst]
+
+  # ---- WiFi security -----------------------------------------------
+  - name: aircrack-ng-docs
+    title: aircrack-ng (baseline suite)
+    url: https://github.com/aircrack-ng/aircrack-ng
+    category: wifi
+  - name: airgeddon
+    title: airgeddon (WPA3/PMKID/Enterprise/evil-twin audit)
+    url: https://github.com/v1s1t0r1sh3r3/airgeddon
+    category: wifi
+  - name: angryoxide
+    title: AngryOxide (modern Rust 802.11 attack tool)
+    url: https://github.com/Ragnt/AngryOxide
+    category: wifi
+  - name: awesome-list-0xor0ne
+    title: 0xor0ne awesome-list (wireless + more)
+    url: https://github.com/0xor0ne/awesome-list
+    category: wifi
+  - name: awesome-wifi-security
+    title: awesome-wifi-security (edelahozuah)
+    url: https://github.com/edelahozuah/awesome-wifi-security
+    category: wifi
+  - name: dragondrain-and-time
+    title: Dragondrain/Dragontime (WPA3 DoS + timing, Vanhoef)
+    url: https://github.com/vanhoefm/dragondrain-and-time
+    category: wifi
+  - name: dragonforce
+    title: Dragonforce (WPA3 timing/cache bruteforce, Vanhoef)
+    url: https://github.com/vanhoefm/dragonforce
+    category: wifi
+  - name: dragonshift
+    title: DragonShift (WPA3 transition-mode downgrade)
+    url: https://github.com/jabbaw0nky/DragonShift
+    category: wifi
+  - name: dragonslayer
+    title: Dragonslayer (EAP-pwd / SAE attacks, Vanhoef)
+    url: https://github.com/vanhoefm/dragonslayer
+    category: wifi
+  - name: eaphammer
+    title: eaphammer (WPA2/3-Enterprise evil twin)
+    url: https://github.com/s0lst1c3/eaphammer
+    category: wifi
+  - name: fragattacks
+    title: FragAttacks (fragmentation/aggregation, Vanhoef)
+    url: https://github.com/vanhoefm/fragattacks
+    category: wifi
+  - name: hcxdumptool
+    title: hcxdumptool (PMKID/handshake capture)
+    url: https://github.com/ZerBea/hcxdumptool
+    category: wifi
+  - name: hcxtools
+    title: hcxtools (capture -> hashcat 22000)
+    url: https://github.com/ZerBea/hcxtools
+    category: wifi
+  - name: hostapd-mana
+    title: hostapd-mana (rogue AP / EAP credential capture)
+    url: https://github.com/sensepost/hostapd-mana
+    category: wifi
+  - name: krackattacks
+    title: KRACK attacks (key reinstallation, Vanhoef)
+    url: https://github.com/vanhoefm/krackattacks-scripts
+    category: wifi
+  - name: macstealer
+    title: MacStealer / Framing Frames (client-isolation bypass, Vanhoef)
+    url: https://github.com/vanhoefm/macstealer
+    category: wifi
+  - name: wifichallengelab
+    title: WiFiChallengeLab (WPA3/Enterprise practice lab)
+    url: https://github.com/r4ulcl/WiFiChallengeLab
+    category: wifi
+  - name: wifipumpkin3
+    title: wifipumpkin3 (rogue-AP framework)
+    url: https://github.com/P0cL4bs/wifipumpkin3
+    category: wifi
+
+  # ---- SDR / RF DSP -----------------------------------------------
+  - name: commpy
+    title: CommPy (digital comms in Python)
+    url: https://github.com/veeresht/CommPy
+    category: sdr
+  - name: inspectrum-docs
+    title: inspectrum (signal analysis)
+    url: https://github.com/miek/inspectrum
+    category: sdr
+  - name: learnsdr
+    title: learnSDR (curated tutorial path, gallicchio)
+    url: https://github.com/gallicchio/learnSDR
+    category: sdr
+  - name: liquid-dsp
+    title: "liquid-dsp (C DSP reference: modems/filters/sync)"
+    url: https://github.com/jgaeddert/liquid-dsp
+    category: sdr
+  - name: mhostetter-sdr
+    title: mhostetter/sdr (MATLAB comms/DSP toolbox replica, notebooks)
+    url: https://github.com/mhostetter/sdr
+    category: sdr
+    index_ext: [.ipynb]
+  - name: pysdr
+    title: PySDR (RF DSP textbook; beamforming/DoA + cyclostationary)
+    url: https://github.com/777arc/PySDR
+    category: sdr
+    index_ext: [.rst]
+  - name: scikit-dsp-comm
+    title: scikit-dsp-comm (notebooks)
+    url: https://github.com/mwickert/scikit-dsp-comm
+    category: sdr
+    index_ext: [.ipynb]
+  - name: sdr4engineers-labs
+    title: SDR for Engineers - Lab Guides (Pluto SDR)
+    url: https://github.com/sdrforengineers/LabGuides
+    category: sdr
+  - name: sdr4engineers-lectures
+    title: SDR for Engineers - Lecture Materials (Pluto SDR)
+    url: https://github.com/sdrforengineers/LectureMaterials
+    category: sdr
+  - name: sdrpp-docs
+    title: SDR++ (docs)
+    url: https://github.com/AlexandreRouma/SDRPlusPlus
+    category: sdr
+  - name: thinkdsp
+    title: ThinkDSP (hands-on spectral analysis)
+    url: https://github.com/AllenDowney/ThinkDSP
+    category: sdr
+    index_ext: [.ipynb]
+
+  # ---- Compliance / GRC --------------------------------------------
+  - name: awesome-compliance
+    title: awesome-compliance (GRC bibliography - ISO 27001/SOC 2/SOX/ESG)
+    url: https://github.com/theopenlane/awesome-compliance
+    category: compliance
+  - name: nist-oscal
+    title: NIST OSCAL (machine-readable control catalogs + docs; CSF/800-53/800-171)
+    url: https://github.com/usnistgov/OSCAL
+    category: compliance
+  - name: owasp-samm
+    title: OWASP SAMM (Software Assurance Maturity Model)
+    url: https://github.com/OWASP/samm
+    category: compliance
