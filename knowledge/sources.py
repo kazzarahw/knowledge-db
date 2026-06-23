@@ -42,47 +42,47 @@ class Source:
 
     def __post_init__(self) -> None:
         if self.type not in ("git", "local", "notebooks"):
-            raise ValueError(f"Invalid source type: {self.type!r}")
+            raise ConfigError(f"Invalid source type: {self.type!r}")
         if self.type == "git":
             if not self.url:
-                raise ValueError(f"Git source {self.name!r} must have a url")
+                raise ConfigError(f"Git source {self.name!r} must have a url")
             if not _validate_git_url(self.url):
-                raise ValueError(f"Invalid git URL for {self.name!r}: {self.url!r}")
+                raise ConfigError(f"Invalid git URL for {self.name!r}: {self.url!r}")
         if self.type == "local":
             if not self.path:
-                raise ValueError(f"Local source {self.name!r} must have a path")
+                raise ConfigError(f"Local source {self.name!r} must have a path")
         if self.type == "notebooks":
             if not self.url:
-                raise ValueError(f"Notebooks source {self.name!r} must have a url")
+                raise ConfigError(f"Notebooks source {self.name!r} must have a url")
 
 
 def load_sources(path: Path) -> List[Source]:
     """Load and validate the sources manifest YAML."""
     if not path.exists():
-        raise FileNotFoundError(f"Sources file not found: {path}")
+        raise ConfigError(f"Sources file not found: {path}")
 
     raw = path.read_text(encoding="utf-8")
     data = yaml.safe_load(raw)
 
     if not isinstance(data, dict) or "sources" not in data:
-        raise ValueError("Sources file must contain a 'sources' key with a list")
+        raise ConfigError("Sources file must contain a 'sources' key with a list")
 
     sources_raw: List[Dict[str, Any]] = data["sources"]
     if not isinstance(sources_raw, list):
-        raise ValueError("'sources' must be a list")
+        raise ConfigError("'sources' must be a list")
 
     sources: List[Source] = []
     seen_names: set[str] = set()
 
     for i, entry in enumerate(sources_raw):
         if not isinstance(entry, dict):
-            raise ValueError(f"Source entry {i} is not a mapping")
+            raise ConfigError(f"Source entry {i} is not a mapping")
 
         name = entry.get("name")
         if not name or not isinstance(name, str):
-            raise ValueError(f"Source entry {i} is missing a valid 'name'")
+            raise ConfigError(f"Source entry {i} is missing a valid 'name'")
         if name in seen_names:
-            raise ValueError(f"Duplicate source name: {name!r}")
+            raise ConfigError(f"Duplicate source name: {name!r}")
         seen_names.add(name)
 
         src_type = entry.get("type", "git")

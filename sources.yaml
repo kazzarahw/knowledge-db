@@ -1,12 +1,20 @@
-# sources.yaml — knowledge-db source definitions
-# Each entry specifies a git repo to clone and which directories/files to index.
-# The `key` must be unique and is used as the subdirectory name under data/sources/.
-
+# Sources manifest for knowledge-db (kdb)
+# Each source is indexed and made searchable.
 sources:
-  - key: example-source
-    url: https://github.com/example/pentest-docs.git
-    ref: main
-    paths:
-      - "docs/"
-      - "README.md"
-    description: "Example pentest documentation"
+  - name: grimoire-docs
+    url: https://github.com/user/grimoire-docs.git
+    branch: main
+    title: "Grimoire Documentation"
+    sparse: ["docs/"]
+    index_ext: [".md", ".rst"]
+
+  - name: local-project-docs
+    type: local
+    path: /path/to/your/docs
+    title: "Local Project Docs"
+
+  - name: pentest-notebooks
+    type: notebooks
+    url: https://github.com/user/pentest-lab.git
+    title: "Pentest Lab Notebooks"
+    subdir: notebooks/

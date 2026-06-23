@@ -40,7 +40,12 @@ def _source_signature(source_dir: Path) -> str | None:
     for fpath in sorted(source_dir.rglob("*")):
         if fpath.is_file():
             h.update(str(fpath.relative_to(source_dir)).encode())
-            h.update(str(fpath.stat().st_mtime_ns).encode())
+            try:
+                with open(fpath, "rb") as f:
+                    h.update(f.read(4096))
+                h.update(str(fpath.stat().st_size).encode())
+            except OSError:
+                pass
     return h.hexdigest()[:32]
 
 
@@ -236,6 +241,7 @@ def cmd_index(
     if not force:
         ensure_schema(conn, dim)
 
+    source_failures = 0
     for source in sources:
         source_dir = data_dir / "sources" / source.name
 
@@ -274,8 +280,9 @@ def cmd_index(
             if verbose:
                 print(f"  {source.name}: {num_sections} sections indexed")
         except Exception as e:
+            source_failures += 1
             conn.rollback()
-            print(f"  Error indexing {source.name}: {e}")
+            print(f"  Error indexing {source.name}: {e}", file=sys.stderr)
             continue
 
     configured_names = [s.name for s in sources]
@@ -306,11 +313,17 @@ def cmd_index(
         "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('embedding_dim', ?)",
         (str(dim),),
     )
-    conn.execute(
-        "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('indexed_at', ?)",
-        (datetime.now(timezone.utc).isoformat(),),
-    )
+    if source_failures == 0:
+        conn.execute(
+            "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('indexed_at', ?)",
+            (datetime.now(timezone.utc).isoformat(),),
+        )
 
     conn.commit()
     conn.close()
-    print("Index complete.")
+    if source_failures:
+        print(
+            f"Index complete with {source_failures} source(s) failed.", file=sys.stderr
+        )
+    else:
+        print("Index complete.")

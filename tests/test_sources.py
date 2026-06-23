@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from knowledge.sources import Source, load_sources
+from knowledge.sources import ConfigError, Source, load_sources
 
 
 class TestSource:
@@ -17,11 +17,11 @@ class TestSource:
         assert s.type == "git"
 
     def test_git_source_no_url_raises(self):
-        with pytest.raises(ValueError, match="must have a url"):
+        with pytest.raises(ConfigError, match="must have a url"):
             Source(name="bad", type="git")
 
     def test_git_source_bad_url_raises(self):
-        with pytest.raises(ValueError, match="Invalid git URL"):
+        with pytest.raises(ConfigError, match="Invalid git URL"):
             Source(name="bad", type="git", url="not-a-url")
 
     def test_local_source_valid(self):
@@ -29,7 +29,7 @@ class TestSource:
         assert s.type == "local"
 
     def test_local_source_no_path_raises(self):
-        with pytest.raises(ValueError, match="must have a path"):
+        with pytest.raises(ConfigError, match="must have a path"):
             Source(name="bad", type="local")
 
     def test_notebooks_source_valid(self):
@@ -37,7 +37,7 @@ class TestSource:
         assert s.type == "notebooks"
 
     def test_invalid_type_raises(self):
-        with pytest.raises(ValueError, match="Invalid source type"):
+        with pytest.raises(ConfigError, match="Invalid source type"):
             Source(name="bad", type="ftp")
 
     def test_default_config(self):
@@ -115,18 +115,18 @@ class TestLoadSources:
             ]
         }
         path.write_text(yaml.dump(data))
-        with pytest.raises(ValueError, match="Duplicate source name"):
+        with pytest.raises(ConfigError, match="Duplicate source name"):
             load_sources(path)
 
     def test_missing_sources_key_raises(self, tmp_path):
         path = tmp_path / "sources.yaml"
         path.write_text(yaml.dump({"other": []}))
-        with pytest.raises(ValueError, match="must contain a 'sources' key"):
+        with pytest.raises(ConfigError, match="must contain a 'sources' key"):
             load_sources(path)
 
     def test_file_not_found(self, tmp_path):
         path = tmp_path / "nonexistent.yaml"
-        with pytest.raises(FileNotFoundError, match="Sources file not found"):
+        with pytest.raises(ConfigError, match="Sources file not found"):
             load_sources(path)
 
     def test_sparse_and_branch(self, tmp_path):

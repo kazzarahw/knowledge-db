@@ -47,6 +47,10 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
+        if args.command == "search" and args.top_k is not None and args.top_k < 1:
+            print("Error: --top-k must be >= 1", file=sys.stderr)
+            sys.exit(1)
+
         if args.command == "fetch":
             from knowledge.fetch import fetch_sources
             from knowledge.config import resolve_data_dir, ensure_data_dir

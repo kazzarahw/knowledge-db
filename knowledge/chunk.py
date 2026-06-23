@@ -81,18 +81,19 @@ def chunk_text(text: str, source: str, category: str, rel_path: str) -> list[Sec
 
         body_lines = lines[body_start:body_end]
         body = "\n".join(body_lines).strip()
+        if not body:
+            body = text
 
-        if body:
-            sections.append(
-                Section(
-                    source=source,
-                    title=text,
-                    category=category,
-                    path=rel_path,
-                    heading_path=heading_path,
-                    body=body,
-                )
+        sections.append(
+            Section(
+                source=source,
+                title=text,
+                category=category,
+                path=rel_path,
+                heading_path=heading_path,
+                body=body,
             )
+        )
 
     return sections
 

@@ -24,12 +24,13 @@ Run `foo bar`.
 class TestChunkText:
     def test_atx_headings(self):
         sections = chunk_text(BASIC_MD, "test", "wikis", "guide.md")
-        assert len(sections) == 4
+        assert len(sections) == 5
         assert sections[0].title == "Intro"
         assert sections[0].heading_path == "Intro"
         assert "Welcome" in sections[0].body
         assert sections[1].heading_path == "Intro > Installation"
-        assert sections[3].heading_path == "Usage > CLI > Subcommands"
+        assert sections[2].heading_path == "Usage"
+        assert sections[4].heading_path == "Usage > CLI > Subcommands"
 
     def test_preamble_before_first_heading(self):
         md = "Some preamble text.\n\n# Heading\nBody text."
