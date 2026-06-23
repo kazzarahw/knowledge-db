@@ -12,62 +12,72 @@ from knowledge.sources import ConfigError, Source, load_sources
 
 class TestSource:
     def test_git_source_valid(self):
-        s = Source(name="test", type="git", url="https://github.com/user/repo.git")
+        s = Source(
+            name="test", source_type="git", url="https://github.com/user/repo.git"
+        )
         assert s.name == "test"
-        assert s.type == "git"
+        assert s.source_type == "git"
 
     def test_git_source_no_url_raises(self):
         with pytest.raises(ConfigError, match="must have a url"):
-            Source(name="bad", type="git")
+            Source(name="bad", source_type="git")
 
     def test_git_source_bad_url_raises(self):
         with pytest.raises(ConfigError, match="Invalid git URL"):
-            Source(name="bad", type="git", url="not-a-url")
+            Source(name="bad", source_type="git", url="not-a-url")
 
     def test_local_source_valid(self):
-        s = Source(name="local1", type="local", path="/some/dir")
-        assert s.type == "local"
+        s = Source(name="local1", source_type="local", path="/some/dir")
+        assert s.source_type == "local"
 
     def test_local_source_no_path_raises(self):
         with pytest.raises(ConfigError, match="must have a path"):
-            Source(name="bad", type="local")
+            Source(name="bad", source_type="local")
 
     def test_notebooks_source_valid(self):
-        s = Source(name="nb1", type="notebooks", url="https://github.com/user/repo.git")
-        assert s.type == "notebooks"
+        s = Source(
+            name="nb1", source_type="notebooks", url="https://github.com/user/repo.git"
+        )
+        assert s.source_type == "notebooks"
 
     def test_invalid_type_raises(self):
         with pytest.raises(ConfigError, match="Invalid source type"):
-            Source(name="bad", type="ftp")
+            Source(name="bad", source_type="ftp")
 
     def test_default_config(self):
-        s = Source(name="test", type="git", url="https://github.com/user/repo.git")
+        s = Source(
+            name="test", source_type="git", url="https://github.com/user/repo.git"
+        )
         assert s.index_ext == (".md", ".mdx", ".rst", ".txt", ".py")
         assert s.sparse == ()
 
     def test_custom_index_ext(self):
         s = Source(
             name="test",
-            type="git",
+            source_type="git",
             url="https://github.com/user/repo.git",
             index_ext=(".md",),
         )
         assert s.index_ext == (".md",)
 
     def test_frozen_dataclass(self):
-        s = Source(name="test", type="git", url="https://github.com/user/repo.git")
+        s = Source(
+            name="test", source_type="git", url="https://github.com/user/repo.git"
+        )
         with pytest.raises(AttributeError):
             s.name = "changed"  # type: ignore[misc]  # testing frozen — assignment must raise
 
     def test_default_category_and_docs_dir(self):
-        s = Source(name="test", type="git", url="https://github.com/user/repo.git")
+        s = Source(
+            name="test", source_type="git", url="https://github.com/user/repo.git"
+        )
         assert s.category == ""
         assert s.docs_dir is None
 
     def test_custom_category_and_docs_dir(self):
         s = Source(
             name="test",
-            type="git",
+            source_type="git",
             url="https://github.com/user/repo.git",
             category="docs",
             docs_dir="docs/",
@@ -76,13 +86,15 @@ class TestSource:
         assert s.docs_dir == "docs/"
 
     def test_title_default(self):
-        s = Source(name="test", type="git", url="https://github.com/user/repo.git")
+        s = Source(
+            name="test", source_type="git", url="https://github.com/user/repo.git"
+        )
         assert s.title == ""
 
     def test_custom_title(self):
         s = Source(
             name="test",
-            type="git",
+            source_type="git",
             url="https://github.com/user/repo.git",
             title="My Docs",
         )
@@ -102,9 +114,9 @@ class TestLoadSources:
         sources = load_sources(path)
         assert len(sources) == 2
         assert sources[0].name == "grimoire"
-        assert sources[0].type == "git"
+        assert sources[0].source_type == "git"
         assert sources[1].name == "local_docs"
-        assert sources[1].type == "local"
+        assert sources[1].source_type == "local"
 
     def test_duplicate_names_raises(self, tmp_path):
         path = tmp_path / "sources.yaml"

@@ -151,7 +151,7 @@ def _index_source(
     if current_head is None:
         current_head = (
             get_git_head(source_dir)
-            if source.type == "git"
+            if source.source_type == "git"
             else _source_signature(source_dir)
         )
     conn.execute(
@@ -251,7 +251,7 @@ def cmd_index(
     for source in sources:
         source_dir = data_dir / "sources" / source.name
 
-        if source.type == "git" and not source_dir.exists():
+        if source.source_type == "git" and not source_dir.exists():
             print(f"Skipping {source.name} -- not cloned. Run 'kdb fetch' first.")
             continue
 
@@ -259,7 +259,7 @@ def cmd_index(
             needs_index = True
             current_head: str | None = None
         else:
-            if source.type == "git":
+            if source.source_type == "git":
                 current_head = get_git_head(source_dir)
             else:
                 current_head = (

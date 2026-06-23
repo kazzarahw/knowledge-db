@@ -41,7 +41,11 @@ def test_walk_files(tmp_path: Path) -> None:
     from knowledge.sources import Source
 
     source = Source(
-        name="test", type="local", path=str(tmp_path), title="Test", category="e2e"
+        name="test",
+        source_type="local",
+        path=str(tmp_path),
+        title="Test",
+        category="e2e",
     )
     (tmp_path / ".hidden").mkdir()
     (tmp_path / ".hidden" / "secret.md").write_text("# secret")

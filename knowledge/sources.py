@@ -28,7 +28,7 @@ class Source:
     """A single knowledge source."""
 
     name: str
-    type: str
+    source_type: str
     url: str | None = None
     path: str | None = None
     branch: str | None = None
@@ -41,17 +41,17 @@ class Source:
     docs_dir: str | None = None
 
     def __post_init__(self) -> None:
-        if self.type not in ("git", "local", "notebooks"):
-            raise ConfigError(f"Invalid source type: {self.type!r}")
-        if self.type == "git":
+        if self.source_type not in ("git", "local", "notebooks"):
+            raise ConfigError(f"Invalid source type: {self.source_type!r}")
+        if self.source_type == "git":
             if not self.url:
                 raise ConfigError(f"Git source {self.name!r} must have a url")
             if not _validate_git_url(self.url):
                 raise ConfigError(f"Invalid git URL for {self.name!r}: {self.url!r}")
-        if self.type == "local":
+        if self.source_type == "local":
             if not self.path:
                 raise ConfigError(f"Local source {self.name!r} must have a path")
-        if self.type == "notebooks":
+        if self.source_type == "notebooks":
             if not self.url:
                 raise ConfigError(f"Notebooks source {self.name!r} must have a url")
 
@@ -102,7 +102,7 @@ def load_sources(path: Path) -> list[Source]:
 
         source = Source(
             name=name,
-            type=src_type,
+            source_type=src_type,
             url=url,
             path=path_val,
             branch=branch,

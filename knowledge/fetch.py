@@ -24,7 +24,7 @@ def fetch_sources(
     for src in sources:
         if only and src.name != only:
             continue
-        if src.type == "local":
+        if src.source_type == "local":
             continue
         if _fetch_git_source(src, data_dir, verbose):
             changed.append(src.name)

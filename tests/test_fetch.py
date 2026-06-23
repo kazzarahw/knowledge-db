@@ -22,15 +22,15 @@ def test_get_git_head_valid_repo():
 
 def test_fetch_sources_skips_local(tmp_path):
     """Local sources are skipped without crashing."""
-    src = Source(name="test-local", type="local", path=str(tmp_path))
+    src = Source(name="test-local", source_type="local", path=str(tmp_path))
     result = fetch_sources([src], tmp_path, verbose=False)
     assert result == []
 
 
 def test_fetch_sources_filters_by_only(tmp_path):
     """only parameter filters correctly."""
-    src1 = Source(name="skip-me", type="local", path=str(tmp_path))
-    src2 = Source(name="keep-me", type="local", path=str(tmp_path))
+    src1 = Source(name="skip-me", source_type="local", path=str(tmp_path))
+    src2 = Source(name="keep-me", source_type="local", path=str(tmp_path))
     result = fetch_sources([src1, src2], tmp_path, only="keep-me", verbose=False)
     assert result == []
 
@@ -39,5 +39,7 @@ def test_clone_invalid_url(tmp_path):
     """Cloning a bad URL returns False."""
     from knowledge.fetch import _clone
 
-    src = Source(name="bad-url", type="git", url="https://invalid.example.com/repo")
+    src = Source(
+        name="bad-url", source_type="git", url="https://invalid.example.com/repo"
+    )
     assert _clone(src, tmp_path / "bad-url", verbose=False) is False

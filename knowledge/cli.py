@@ -122,7 +122,7 @@ def main() -> None:
             print(header)
             print("-" * len(header))
             for s in sources:
-                if s.type == "local":
+                if s.source_type == "local":
                     st = (
                         "available"
                         if s.path and Path(s.path).expanduser().exists()
@@ -136,7 +136,7 @@ def main() -> None:
                     )
                 print(
                     f"{s.name[:18]:<20} {s.title[:23]:<25} {s.category[:8]:<10} "
-                    f"{s.type:<8} {st:<12}"
+                    f"{s.source_type:<8} {st:<12}"
                 )
 
     except ConfigError as e:
