@@ -99,7 +99,7 @@ class SentenceTransformerEmbedder:
         self.dim = self._model.get_sentence_embedding_dimension()
 
     def embed(self, texts: list[str]) -> np.ndarray:
-        """Embed a batch of texts using model's document prompt (if any)."""
+        """Embed a batch of texts (no prompt prefix for docs)."""
         return self._model.encode(
             texts,
             normalize_embeddings=True,
@@ -107,9 +107,10 @@ class SentenceTransformerEmbedder:
         )
 
     def embed_query(self, query: str) -> np.ndarray:
-        """Embed a single query string using model's query prompt (if any)."""
+        """Embed a single query string with query prompt if model defines one."""
         return self._model.encode(
             query,
+            prompt_name="query" if "query" in self._model.prompts else None,
             normalize_embeddings=True,
             show_progress_bar=False,
         )

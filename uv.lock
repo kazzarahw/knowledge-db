@@ -340,18 +340,15 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
-    { name = "tqdm" },
-]
-
-[package.dev-dependencies]
-dev = [
     { name = "pytest" },
+    { name = "tqdm" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "nbformat", specifier = ">=5.0" },
     { name = "numpy", specifier = ">=1.24" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.1.1" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "sentence-transformers", specifier = ">=3.0,<4.0" },
     { name = "sqlite-vec", specifier = ">=0.1.9,<1.0.0" },
@@ -359,9 +356,6 @@ requires-dist = [
     { name = "tqdm", marker = "extra == 'dev'", specifier = ">=4.0" },
 ]
 provides-extras = ["dev"]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=9.1.1" }]
 
 [[package]]
 name = "markupsafe"
