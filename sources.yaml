@@ -1,0 +1,12 @@
+# sources.yaml — knowledge-db source definitions
+# Each entry specifies a git repo to clone and which directories/files to index.
+# The `key` must be unique and is used as the subdirectory name under data/sources/.
+
+sources:
+  - key: example-source
+    url: https://github.com/example/pentest-docs.git
+    ref: main
+    paths:
+      - "docs/"
+      - "README.md"
+    description: "Example pentest documentation"

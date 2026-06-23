@@ -1,3 +1,6 @@
+# knowledge-db data directory (cloned repos, SQLite index)
+data/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
