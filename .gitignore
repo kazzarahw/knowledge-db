@@ -71,6 +71,12 @@ instance/
 # Sphinx documentation
 docs/_build/
 
+# Git worktrees
+.worktrees/
+
+# Superpowers design docs (specs, plans, agent artifacts)
+docs/superpowers/
+
 # PyBuilder
 .pybuilder/
 target/
