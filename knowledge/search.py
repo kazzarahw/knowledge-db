@@ -1,14 +1,24 @@
 """Vector search via sqlite-vec CTE pattern."""
 
-from __future__ import annotations
-
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 
 from knowledge.config import resolve_data_dir
 from knowledge.db import get_connection
 from knowledge.embed import get_embedder
+
+
+class SearchResult(TypedDict):
+    """Single knowledge-base search result row."""
+
+    source: str
+    title: str
+    category: str
+    path: str
+    heading_path: str
+    body: str
+    distance: float
 
 
 def cmd_search(
@@ -16,7 +26,7 @@ def cmd_search(
     top_k: int = 10,
     source: str | None = None,
     config_dir: str | None = None,
-) -> list[dict[str, Any]]:
+) -> list[SearchResult]:
     """Search the index. Returns list of result dicts ordered by relevance.
 
     Validates that the embedding model dimension matches the stored index
