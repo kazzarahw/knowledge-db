@@ -184,7 +184,11 @@ def cmd_index(
     db_path = data_dir / "index.db"
     conn = get_connection(db_path)
 
-    embedder = get_embedder(config_dir=config_dir)
+    try:
+        embedder = get_embedder(config_dir=config_dir)
+    except BaseException:
+        conn.close()
+        raise
     dim = embedder.dim
     model_name = embedder.model_name
 
