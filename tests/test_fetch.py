@@ -69,16 +69,24 @@ def test_pull_local_repo_no_remote(tmp_path: Path) -> None:
     )
     dest = tmp_path / "local-pull"
     dest.mkdir()
-    subprocess.run(["git", "init"], cwd=dest, capture_output=True)
+    subprocess.run(["git", "init"], cwd=dest, capture_output=True, check=True)
     subprocess.run(
-        ["git", "config", "user.email", "test@test"], cwd=str(dest), capture_output=True
+        ["git", "config", "user.email", "test@test"],
+        cwd=dest,
+        capture_output=True,
+        check=True,
     )
     subprocess.run(
-        ["git", "config", "user.name", "Test"], cwd=str(dest), capture_output=True
+        ["git", "config", "user.name", "Test"],
+        cwd=dest,
+        capture_output=True,
+        check=True,
     )
     (dest / "file.md").write_text("# test")
-    subprocess.run(["git", "add", "."], cwd=dest, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "initial"], cwd=dest, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=dest, capture_output=True, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "initial"], cwd=dest, capture_output=True, check=True
+    )
     # No remote → pull fails → returns False
     result = _pull(src, dest, verbose=False)
     assert result is False
