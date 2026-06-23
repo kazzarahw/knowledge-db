@@ -29,8 +29,8 @@ def chunk_file(
 
 
 def chunk_text(text: str, source: str, category: str, rel_path: str) -> list[Section]:
-    text = re.sub(r"^\ufeff?---+\s*\n.*?\n---+\s*", "", text, flags=re.DOTALL)
-    lines = text.split("\n")
+    text = re.sub(r"^\ufeff?---+\s*\n.*?\n---+[ \t]*", "", text, flags=re.DOTALL)
+    lines = text.splitlines()
     boundaries = _scan_headings(lines)
 
     stem = Path(rel_path).stem
@@ -66,7 +66,7 @@ def chunk_text(text: str, source: str, category: str, rel_path: str) -> list[Sec
                 )
             )
 
-    for idx, (line_num, level, text, body_start) in enumerate(boundaries):
+    for idx, (_, level, text, body_start) in enumerate(boundaries):
         heading_path_parts = heading_path_parts[: level - 1]
         while len(heading_path_parts) < level:
             heading_path_parts.append("")
@@ -130,7 +130,7 @@ def _scan_headings(
         setext = re.match(r"^ {0,3}(={3,}|-{3,})\s*$", line)
         if setext and prev_text:
             prev_idx, prev_line = prev_text
-            level = 1 if line[0] == "=" else 2
+            level = 1 if setext.group(1)[0] == "=" else 2
             headings.append((prev_idx, level, prev_line.strip(), i + 1))
             prev_text = None
             i += 1
@@ -156,4 +156,6 @@ def _convert_notebook(filepath: Path) -> str:
             cells.append(cell.source)
         elif cell.cell_type == "code":
             cells.append(f"```\n{cell.source}\n```")
+        elif cell.cell_type == "raw":
+            cells.append(f"<!-- raw cell -->\n{cell.source}")
     return "\n\n".join(cells)

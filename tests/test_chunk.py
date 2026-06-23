@@ -75,6 +75,31 @@ class TestChunkText:
         assert sections[1].title == "H2 Heading"
         assert sections[1].heading_path == "H1 Heading > H2 Heading"
 
+    def test_setext_heading_leading_whitespace(self):
+        md = "Top Level\n  ===\nBody.\n\nSecond Level\n  ---\nMore body."
+        sections = chunk_text(md, "test", "wikis", "setext.md")
+        assert len(sections) == 2
+        assert sections[0].title == "Top Level"
+        assert sections[0].heading_path == "Top Level"
+        assert sections[1].title == "Second Level"
+        assert sections[1].heading_path == "Top Level > Second Level"
+
+    def test_crlf_line_endings(self):
+        md = "# Heading\r\n\r\nBody paragraph.\r\n\r\n## Subheading\r\nMore content."
+        sections = chunk_text(md, "test", "wikis", "crlf.md")
+        assert len(sections) == 2
+        assert sections[0].title == "Heading"
+        assert sections[1].title == "Subheading"
+        assert "Body paragraph." in sections[0].body
+
+    def test_frontmatter_preserves_body_content(self):
+        md = "---\ntitle: Test\n---\n\nBody text after frontmatter.\n\n# Real Heading\nBody."
+        sections = chunk_text(md, "test", "wikis", "fm.md")
+        assert len(sections) == 2
+        assert sections[0].heading_path == "fm"
+        assert "Body text after frontmatter" in sections[0].body
+        assert sections[1].title == "Real Heading"
+
 
 class TestChunkFile:
     def test_file_read(self, tmp_path):
@@ -100,3 +125,19 @@ class TestChunkFile:
         assert len(sections) == 2
         assert sections[0].title == "Notebook Title"
         assert sections[1].title == "Section 2"
+
+    def test_notebook_raw_cell(self, tmp_path):
+        import nbformat as nbf
+
+        nb = nbf.v4.new_notebook()
+        nb.cells = [
+            nbf.v4.new_raw_cell("raw content here"),
+            nbf.v4.new_markdown_cell("# Heading\nBody text."),
+        ]
+        f = tmp_path / "test.ipynb"
+        nbf.write(nb, f)
+        sections = chunk_file(f, "test", "notebooks", "test.ipynb")
+        assert len(sections) == 2
+        assert sections[0].heading_path == "test"
+        assert "raw content here" in sections[0].body
+        assert sections[1].title == "Heading"
