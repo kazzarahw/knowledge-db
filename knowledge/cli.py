@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from knowledge.config import VERSION
+from knowledge.config import VERSION, resolve_data_dir, resolve_sources_yaml
 from knowledge.sources import ConfigError
 
 
@@ -29,7 +29,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_index.add_argument("--force", action="store_true", help="full rebuild")
 
     p_update = sub.add_parser("update", help="fetch + index (one-shot)")
-    p_update.add_argument("--force", action="store_true")
+    p_update.add_argument("--force", action="store_true", help="full rebuild")
 
     p_search = sub.add_parser("search", help="search indexed knowledge")
     p_search.add_argument("query", nargs="?", help="search query")
@@ -43,25 +43,22 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """CLI entry point: parse args, dispatch to subcommand handlers."""
     parser = _build_parser()
     args = parser.parse_args()
 
     try:
-        if args.command == "search" and args.top_k is not None and args.top_k < 1:
+        if args.command == "search" and args.top_k < 1:
             print("Error: --top-k must be >= 1", file=sys.stderr)
             sys.exit(1)
 
         if args.command == "fetch":
             from knowledge.fetch import fetch_sources
-            from knowledge.config import resolve_data_dir, ensure_data_dir
+            from knowledge.config import ensure_data_dir
             from knowledge.sources import load_sources
 
             data_dir = ensure_data_dir(resolve_data_dir(args.config))
-            config_dir = args.config or str(data_dir.parent)
-            sp = Path(config_dir) / "sources.yaml"
-            if not sp.exists():
-                sp = Path.cwd() / "sources.yaml"
-            sources = load_sources(sp)
+            sources = load_sources(resolve_sources_yaml(args.config))
             changed = fetch_sources(
                 sources, data_dir, only=args.only, verbose=args.verbose
             )
@@ -78,15 +75,11 @@ def main() -> None:
         elif args.command == "update":
             from knowledge.fetch import fetch_sources
             from knowledge.indexer import cmd_index
-            from knowledge.config import resolve_data_dir, ensure_data_dir
+            from knowledge.config import ensure_data_dir
             from knowledge.sources import load_sources
 
             data_dir = ensure_data_dir(resolve_data_dir(args.config))
-            config_dir = args.config or str(data_dir.parent)
-            sp = Path(config_dir) / "sources.yaml"
-            if not sp.exists():
-                sp = Path.cwd() / "sources.yaml"
-            sources = load_sources(sp)
+            sources = load_sources(resolve_sources_yaml(args.config))
             print("Fetching sources...")
             fetch_sources(sources, data_dir, verbose=args.verbose)
             print("Indexing...")
@@ -103,55 +96,47 @@ def main() -> None:
                 query=args.query,
                 top_k=args.top_k,
                 source=args.source,
-                json_output=args.json,
                 config_dir=args.config,
             )
 
             if args.json:
                 print(json.dumps(results, indent=2, ensure_ascii=False))
-            else:
-                if not results:
-                    print("No results found.")
-                    return
-                header = f"{'Source':<20} {'Title':<40} {'Category':<15} {'Heading Path':<45} {'Distance':<8}"
+            elif results:
+                header = f"{'Source':<16} {'Title':<25} {'Category':<10} {'Heading Path':<17} {'Distance':<8}"
                 print(header)
                 print("-" * len(header))
                 for r in results:
                     print(
-                        f"{r['source'][:18]:<20} {r['title'][:38]:<40} "
-                        f"{r['category'][:13]:<15} {r['heading_path'][:43]:<45} "
-                        f"{r['distance']:.4f}"
+                        f"{r['source'][:14]:<16} {r['title'][:23]:<25} "
+                        f"{r['category'][:8]:<10} {r['heading_path'][:15]:<17} "
+                        f"{r['distance']:<8.4f}"
                     )
 
         elif args.command == "list-sources":
             from knowledge.sources import load_sources
-            from knowledge.config import resolve_data_dir
 
             data_dir = resolve_data_dir(args.config)
-            config_dir = args.config or str(data_dir.parent)
-            sp = Path(config_dir) / "sources.yaml"
-            if not sp.exists():
-                sp = Path.cwd() / "sources.yaml"
-            sources = load_sources(sp)
+            sources = load_sources(resolve_sources_yaml(args.config))
 
-            header = f"{'Name':<25} {'Title':<40} {'Category':<15} {'Type':<8} {'Status':<12}"
+            header = f"{'Name':<20} {'Title':<25} {'Category':<10} {'Type':<8} {'Status':<12}"
             print(header)
             print("-" * len(header))
             for s in sources:
                 if s.type == "local":
-                    status = (
+                    st = (
                         "available"
                         if s.path and Path(s.path).expanduser().exists()
                         else "missing"
                     )
                 else:
-                    status = (
+                    st = (
                         "cloned"
                         if (data_dir / "sources" / s.name).exists()
                         else "not-cloned"
                     )
                 print(
-                    f"{s.name:<25} {s.title:<40} {s.category:<15} {s.type:<8} {status:<12}"
+                    f"{s.name[:18]:<20} {s.title[:23]:<25} {s.category[:8]:<10} "
+                    f"{s.type:<8} {st:<12}"
                 )
 
     except ConfigError as e:

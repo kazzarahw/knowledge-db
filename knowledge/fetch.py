@@ -8,9 +8,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-_GIT_TIMEOUT = 300
-
 from knowledge.sources import Source
+
+_GIT_TIMEOUT = 300
 
 
 def fetch_sources(

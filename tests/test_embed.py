@@ -73,10 +73,10 @@ def test_get_embedder_config_with_null_model():
 
 def test_get_embedder_recreates_on_device_change():
     """get_embedder must recreate embedder when device changes."""
-    with (
-        patch("knowledge.embed._embedder", None),
-        patch("knowledge.embed.SentenceTransformerEmbedder") as MockST,
-    ):
+    # Clear function-attribute cache before test
+    if hasattr(get_embedder, "_cached"):
+        del get_embedder._cached
+    with patch("knowledge.embed.SentenceTransformerEmbedder") as MockST:
         MockST.side_effect = lambda model_name, device=None: MagicMock(
             model_name=model_name,
             _device=device or "cpu",

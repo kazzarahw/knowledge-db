@@ -1,3 +1,5 @@
+"""Heading-aware document chunker: ATX + setext, code-block aware, notebook conversion."""
+
 from __future__ import annotations
 
 import re
@@ -9,6 +11,8 @@ import nbformat
 
 @dataclass(frozen=True, slots=True)
 class Section:
+    """A single document section with heading path and body."""
+
     source: str
     title: str
     category: str
@@ -20,6 +24,20 @@ class Section:
 def chunk_file(
     filepath: Path, source: str, category: str, rel_path: str | None = None
 ) -> list[Section]:
+    """Read a file and split it into heading-bounded sections.
+
+    Handles plain text, markdown, reStructuredText, and Jupyter notebooks.
+    Notebooks are converted to text before chunking.
+
+    Args:
+        filepath: Path to the file to chunk.
+        source: Source name for metadata.
+        category: Source category for metadata.
+        rel_path: Relative path for metadata. Defaults to str(filepath).
+
+    Returns:
+        List of Section dataclass instances.
+    """
     ext = filepath.suffix.lower()
     if ext == ".ipynb":
         text = _convert_notebook(filepath)
@@ -29,6 +47,21 @@ def chunk_file(
 
 
 def chunk_text(text: str, source: str, category: str, rel_path: str) -> list[Section]:
+    """Split a text string into heading-bounded Section instances.
+
+    Scans for ATX (``# heading``) and setext (underlined) headings,
+    stripping frontmatter and respecting code-block fences.
+
+    Args:
+        text: Document text content.
+        source: Source name for metadata.
+        category: Source category for metadata.
+        rel_path: Relative file path for metadata.
+
+    Returns:
+        List of Section dataclass instances. Returns a single Section with
+        the full text if no headings are found.
+    """
     text = re.sub(r"^\ufeff?---+\s*\n.*?\n---+[ \t]*", "", text, flags=re.DOTALL)
     lines = text.splitlines()
     boundaries = _scan_headings(lines)
@@ -81,9 +114,7 @@ def chunk_text(text: str, source: str, category: str, rel_path: str) -> list[Sec
 
         body_lines = lines[body_start:body_end]
         body = "\n".join(body_lines).strip()
-        if not body:
-            body = text
-
+        # Empty body is valid — don't fall back to entire document
         sections.append(
             Section(
                 source=source,
@@ -148,7 +179,7 @@ def _scan_headings(
 
 
 def _convert_notebook(filepath: Path) -> str:
-    with open(filepath, encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8", errors="replace") as f:
         nb = nbformat.read(f, as_version=4)
 
     cells = []

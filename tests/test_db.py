@@ -1,3 +1,7 @@
+"""Tests for knowledge.db — SQLite connection and schema."""
+
+from __future__ import annotations
+
 import sqlite3
 
 from knowledge.db import get_connection, ensure_schema

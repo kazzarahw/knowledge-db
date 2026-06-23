@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import signal
 import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from types import FrameType
 
 import numpy as np
 
 from knowledge.chunk import Section, chunk_file
-from knowledge.config import resolve_data_dir, ensure_data_dir
+from knowledge.config import resolve_data_dir, ensure_data_dir, resolve_sources_yaml
 from knowledge.db import get_connection, ensure_schema
 from knowledge.embed import SentenceTransformerEmbedder, get_embedder
 from knowledge.fetch import fetch_sources, get_git_head
@@ -34,8 +36,6 @@ BATCH_SIZE = 32
 def _source_signature(source_dir: Path) -> str | None:
     if not source_dir.exists():
         return None
-    import hashlib
-
     h = hashlib.sha256()
     for fpath in sorted(source_dir.rglob("*")):
         if fpath.is_file():
@@ -117,10 +117,9 @@ def _index_source(
         batch_embeddings = embedder.embed(batch_texts)
         all_embeddings.append(batch_embeddings)
 
-    if all_embeddings:
-        all_embeddings = np.vstack(all_embeddings)
-    else:
+    if not all_embeddings:
         return 0
+    embedding_matrix = np.vstack(all_embeddings)
 
     conn.execute("DELETE FROM sections WHERE source = ?", (source.name,))
     conn.execute("DELETE FROM section_vectors WHERE source = ?", (source.name,))
@@ -142,7 +141,7 @@ def _index_source(
 
     vec_rows = [
         (sid[0], source.name, vec.tobytes())
-        for sid, vec in zip(sec_ids, all_embeddings)
+        for sid, vec in zip(sec_ids, embedding_matrix)
     ]
     conn.executemany(
         "INSERT INTO section_vectors (section_id, source, embedding) VALUES (?, ?, ?)",
@@ -169,16 +168,19 @@ def cmd_index(
     force: bool = False,
     verbose: bool = False,
 ) -> None:
+    """Index all configured sources: chunk → embed → store.
+
+    Validates embedding dimension against stored index metadata.
+    Supports ``--force`` for full rebuild and SIGINT for graceful interruption.
+    Cleans up orphan entries for sources no longer configured.
+
+    Args:
+        config_dir: Override config directory path.
+        force: Drop and recreate the entire index.
+        verbose: Print per-file and per-source progress.
+    """
     data_dir = ensure_data_dir(resolve_data_dir(config_dir))
-
-    if config_dir:
-        sources_path = Path(config_dir) / "sources.yaml"
-    else:
-        sources_path = data_dir.parent / "sources.yaml"
-    if not sources_path.exists():
-        sources_path = Path("sources.yaml")
-
-    sources = load_sources(sources_path)
+    sources = load_sources(resolve_sources_yaml(config_dir))
     db_path = data_dir / "index.db"
     conn = get_connection(db_path)
 
@@ -186,35 +188,40 @@ def cmd_index(
     dim = embedder.dim
     model_name = embedder.model_name
 
-    existing_dim = conn.execute(
-        "SELECT value FROM index_meta WHERE key = 'embedding_dim'"
-    ).fetchone()
-    if existing_dim and not force:
-        try:
-            stored_dim = int(existing_dim[0])
-        except (ValueError, TypeError):
-            print(
-                f"Warning: corrupt index metadata (embedding_dim='{existing_dim[0]}'). Run 'kdb index --force' to rebuild."
-            )
-            sys.exit(1)
-        if stored_dim != dim:
-            print(
-                f"Error: Model dimension ({dim}) differs from stored index ({stored_dim}). Run 'kdb index --force' to rebuild."
-            )
-            sys.exit(1)
-
-    has_meta = conn.execute("SELECT COUNT(*) FROM index_meta").fetchone()[0] > 0
+    # Check if database has existing tables (safe before ensure_schema)
     tables_exist = (
         conn.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sections'"
         ).fetchone()[0]
         > 0
     )
-    if tables_exist and not has_meta and not force:
-        print(
-            "Warning: Index metadata missing -- index may be corrupt. Run 'kdb index --force' to rebuild."
-        )
-        sys.exit(1)
+
+    if tables_exist and not force:
+        has_meta = conn.execute("SELECT COUNT(*) FROM index_meta").fetchone()[0] > 0
+        if not has_meta:
+            print(
+                "Warning: Index metadata missing -- index may be corrupt. "
+                "Run 'kdb index --force' to rebuild."
+            )
+            sys.exit(1)
+        existing_dim = conn.execute(
+            "SELECT value FROM index_meta WHERE key = 'embedding_dim'"
+        ).fetchone()
+        if existing_dim:
+            try:
+                stored_dim = int(existing_dim[0])
+            except (ValueError, TypeError):
+                print(
+                    f"Warning: corrupt index metadata (embedding_dim='{existing_dim[0]}'). "
+                    "Run 'kdb index --force' to rebuild."
+                )
+                sys.exit(1)
+            if stored_dim != dim:
+                print(
+                    f"Error: Model dimension ({dim}) differs from stored index ({stored_dim}). "
+                    "Run 'kdb index --force' to rebuild."
+                )
+                sys.exit(1)
 
     if force:
         conn.executescript("DROP TABLE IF EXISTS sections")
@@ -223,8 +230,10 @@ def cmd_index(
         conn.executescript("DROP TABLE IF EXISTS index_meta")
         ensure_schema(conn, dim)
         conn.execute("VACUUM")
+    elif not tables_exist:
+        ensure_schema(conn, dim)
 
-    def _on_sigint(signum, frame):
+    def _on_sigint(signum: int, frame: FrameType | None) -> None:
         print("\nInterrupted. Index is partial. Run 'kdb index' to resume.")
         try:
             conn.execute(
@@ -237,9 +246,6 @@ def cmd_index(
         sys.exit(130)
 
     signal.signal(signal.SIGINT, _on_sigint)
-
-    if not force:
-        ensure_schema(conn, dim)
 
     source_failures = 0
     for source in sources:
@@ -286,24 +292,20 @@ def cmd_index(
             continue
 
     configured_names = [s.name for s in sources]
-    conn.execute(
-        "DELETE FROM sections WHERE source NOT IN ({})".format(
-            ",".join("?" * len(configured_names))
-        ),
-        configured_names,
-    )
-    conn.execute(
-        "DELETE FROM section_vectors WHERE source NOT IN ({})".format(
-            ",".join("?" * len(configured_names))
-        ),
-        configured_names,
-    )
-    conn.execute(
-        "DELETE FROM source_state WHERE name NOT IN ({})".format(
-            ",".join("?" * len(configured_names))
-        ),
-        configured_names,
-    )
+    if configured_names:
+        placeholders = ",".join("?" * len(configured_names))
+        conn.execute(
+            f"DELETE FROM sections WHERE source NOT IN ({placeholders})",
+            configured_names,
+        )
+        conn.execute(
+            f"DELETE FROM section_vectors WHERE source NOT IN ({placeholders})",
+            configured_names,
+        )
+        conn.execute(
+            f"DELETE FROM source_state WHERE name NOT IN ({placeholders})",
+            configured_names,
+        )
 
     conn.execute(
         "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('embedding_model', ?)",

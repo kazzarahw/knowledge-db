@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 VERSION = "0.1.0"
@@ -11,7 +12,7 @@ DATA_DIR_ENV_VAR = "KNOWLEDGE_DB_DIR"
 DEFAULT_MODEL = "LiquidAI/LFM2.5-Embedding-350M"
 
 
-def load_config(config_dir: Path) -> dict[str, object]:
+def load_config(config_dir: Path) -> dict[str, str | None]:
     """Load config.yaml from a config directory.
 
     Returns a dict with optional keys: model (str), device (str | None).
@@ -29,9 +30,11 @@ def load_config(config_dir: Path) -> dict[str, object]:
         embed = raw.get("embed", {}) or {}
         if not isinstance(embed, dict):
             return {"model": DEFAULT_MODEL, "device": None}
+        raw_model = embed.get("model", DEFAULT_MODEL)
+        raw_device = embed.get("device")
         return {
-            "model": embed.get("model", DEFAULT_MODEL),
-            "device": embed.get("device"),
+            "model": str(raw_model) if not isinstance(raw_model, str) else raw_model,
+            "device": str(raw_device) if isinstance(raw_device, str) else None,
         }
     except Exception:
         return {"model": DEFAULT_MODEL, "device": None}
@@ -61,3 +64,24 @@ def ensure_data_dir(data_dir: Path) -> Path:
     """Create data directory and subdirs if they don't exist."""
     (data_dir / "sources").mkdir(parents=True, exist_ok=True)
     return data_dir
+
+
+def resolve_sources_yaml(config_dir: str | None) -> Path:
+    """Resolve sources.yaml path. Falls back to cwd with warning.
+
+    Checks *config_dir*/sources.yaml first, then cwd/sources.yaml.
+    Prints a warning on stderr when falling back.
+    """
+    if config_dir:
+        sp = Path(config_dir) / "sources.yaml"
+        if sp.exists():
+            return sp
+        fallback = Path.cwd() / "sources.yaml"
+        if fallback.exists():
+            print(
+                f"Warning: {sp} not found — using {fallback}",
+                file=sys.stderr,
+            )
+            return fallback
+        return sp
+    return Path("sources.yaml")

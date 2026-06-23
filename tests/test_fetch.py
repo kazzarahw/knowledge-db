@@ -1,5 +1,7 @@
 """Tests for knowledge.fetch."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 from knowledge.fetch import fetch_sources, get_git_head

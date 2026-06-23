@@ -1,5 +1,7 @@
 """Integration tests: end-to-end chunking, indexing, and search."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 from knowledge.chunk import chunk_text

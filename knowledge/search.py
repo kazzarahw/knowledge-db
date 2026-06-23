@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,6 @@ def cmd_search(
     query: str,
     top_k: int = 10,
     source: str | None = None,
-    json_output: bool = False,
     config_dir: str | None = None,
 ) -> list[dict[str, Any]]:
     """Search the index. Returns list of result dicts ordered by relevance.
@@ -79,6 +79,11 @@ def cmd_search(
         """.format(source_filter=source_filter),
         [serialized, top_k, *source_params],
     ).fetchall()
+
+    if not rows:
+        print("No results found.", file=sys.stderr)
+        conn.close()
+        return []
 
     results = []
     for row in rows:

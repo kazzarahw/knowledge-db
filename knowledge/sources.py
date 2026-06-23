@@ -5,16 +5,17 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
+from yaml import YAMLError
 
 
 class ConfigError(ValueError):
     """Configuration error — invalid or missing source config."""
 
 
-_GIT_URL_RE = re.compile(r"^(https?://|git@|ssh://git@)[\w.:/-]+(?:\.git)?/?$")
+_GIT_URL_RE = re.compile(r"^(https?://|git@|ssh://git@)[\w.:/@-]+(?:\.git)?/?$")
 
 
 def _validate_git_url(url: str) -> bool:
@@ -22,23 +23,22 @@ def _validate_git_url(url: str) -> bool:
     return bool(_GIT_URL_RE.match(url))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Source:
     """A single knowledge source."""
 
     name: str
     type: str
-    url: Optional[str] = None
-    path: Optional[str] = None
-    subdir: Optional[str] = None
-    branch: Optional[str] = None
+    url: str | None = None
+    path: str | None = None
+    branch: str | None = None
     sparse: tuple[str, ...] = field(default_factory=tuple)
     index_ext: tuple[str, ...] = field(
         default_factory=lambda: (".md", ".mdx", ".rst", ".txt", ".py")
     )
     title: str = ""
     category: str = ""
-    docs_dir: Optional[str] = None
+    docs_dir: str | None = None
 
     def __post_init__(self) -> None:
         if self.type not in ("git", "local", "notebooks"):
@@ -56,22 +56,25 @@ class Source:
                 raise ConfigError(f"Notebooks source {self.name!r} must have a url")
 
 
-def load_sources(path: Path) -> List[Source]:
+def load_sources(path: Path) -> list[Source]:
     """Load and validate the sources manifest YAML."""
     if not path.exists():
         raise ConfigError(f"Sources file not found: {path}")
 
     raw = path.read_text(encoding="utf-8")
-    data = yaml.safe_load(raw)
+    try:
+        data = yaml.safe_load(raw)
+    except YAMLError as e:
+        raise ConfigError(f"Invalid YAML in {path}: {e}")
 
     if not isinstance(data, dict) or "sources" not in data:
         raise ConfigError("Sources file must contain a 'sources' key with a list")
 
-    sources_raw: List[Dict[str, Any]] = data["sources"]
+    sources_raw: list[dict[str, Any]] = data["sources"]
     if not isinstance(sources_raw, list):
         raise ConfigError("'sources' must be a list")
 
-    sources: List[Source] = []
+    sources: list[Source] = []
     seen_names: set[str] = set()
 
     for i, entry in enumerate(sources_raw):
@@ -88,7 +91,6 @@ def load_sources(path: Path) -> List[Source]:
         src_type = entry.get("type", "git")
         url = entry.get("url")
         path_val = entry.get("path")
-        subdir = entry.get("subdir")
         branch = entry.get("branch")
         sparse = tuple(entry.get("sparse", []))
         index_ext = tuple(
@@ -103,7 +105,6 @@ def load_sources(path: Path) -> List[Source]:
             type=src_type,
             url=url,
             path=path_val,
-            subdir=subdir,
             branch=branch,
             sparse=sparse,
             index_ext=index_ext,

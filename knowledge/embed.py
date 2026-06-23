@@ -8,8 +8,6 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 
-_embedder: SentenceTransformerEmbedder | None = None
-
 
 def get_embedder(
     model_name: str | None = None,
@@ -23,30 +21,28 @@ def get_embedder(
 
     The model is loaded once on first call and reused. This avoids
     3-5s model-load overhead on every ``kdb search`` invocation.
+
+    Cache is stored as a function attribute to avoid module-level
+    mutable state (``_embedder`` would be a global anti-pattern).
     """
-    global _embedder
     if config_dir:
         from knowledge.config import load_config
 
         cfg = load_config(Path(config_dir))
         if model_name is None:
             cfg_model = cfg.get("model")
-            model_name = (
-                str(cfg_model)
-                if cfg_model is not None
-                else "LiquidAI/LFM2.5-Embedding-350M"
-            )
+            model_name = cfg_model or "LiquidAI/LFM2.5-Embedding-350M"
         if device is None:
             device = cfg.get("device")
     if model_name is None:
         model_name = "LiquidAI/LFM2.5-Embedding-350M"
-    if (
-        _embedder is None
-        or _embedder.model_name != model_name
-        or _embedder._device != device
-    ):
-        _embedder = SentenceTransformerEmbedder(model_name, device=device)
-    return _embedder
+    cached = getattr(get_embedder, "_cached", None)
+    if cached is not None and cached.model_name == model_name:
+        if device is None or cached._device == device:
+            return cached
+    cached = SentenceTransformerEmbedder(model_name, device=device)
+    get_embedder._cached = cached
+    return cached
 
 
 def _resolve_device() -> str:
@@ -95,7 +91,7 @@ class SentenceTransformerEmbedder(Embedder):
         self,
         model_name: str = "LiquidAI/LFM2.5-Embedding-350M",
         device: str | None = None,
-    ):
+    ) -> None:
         from sentence_transformers import SentenceTransformer
 
         resolved = device if device is not None else _resolve_device()

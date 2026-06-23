@@ -17,4 +17,3 @@ sources:
     type: notebooks
     url: https://github.com/user/pentest-lab.git
     title: "Pentest Lab Notebooks"
-    subdir: notebooks/

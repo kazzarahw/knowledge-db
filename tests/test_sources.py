@@ -57,7 +57,7 @@ class TestSource:
     def test_frozen_dataclass(self):
         s = Source(name="test", type="git", url="https://github.com/user/repo.git")
         with pytest.raises(AttributeError):
-            s.name = "changed"  # type: ignore[misc]
+            s.name = "changed"  # type: ignore[misc]  # testing frozen — assignment must raise
 
     def test_default_category_and_docs_dir(self):
         s = Source(name="test", type="git", url="https://github.com/user/repo.git")
