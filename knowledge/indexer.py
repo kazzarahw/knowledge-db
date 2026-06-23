@@ -199,6 +199,7 @@ def cmd_index(
     if tables_exist and not force:
         has_meta = conn.execute("SELECT COUNT(*) FROM index_meta").fetchone()[0] > 0
         if not has_meta:
+            conn.close()
             print(
                 "Warning: Index metadata missing -- index may be corrupt. "
                 "Run 'kdb index --force' to rebuild."
@@ -211,12 +212,14 @@ def cmd_index(
             try:
                 stored_dim = int(existing_dim[0])
             except (ValueError, TypeError):
+                conn.close()
                 print(
                     f"Warning: corrupt index metadata (embedding_dim='{existing_dim[0]}'). "
                     "Run 'kdb index --force' to rebuild."
                 )
                 sys.exit(1)
             if stored_dim != dim:
+                conn.close()
                 print(
                     f"Error: Model dimension ({dim}) differs from stored index ({stored_dim}). "
                     "Run 'kdb index --force' to rebuild."

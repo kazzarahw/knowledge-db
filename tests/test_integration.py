@@ -102,3 +102,114 @@ def test_search_dimension_validation(tmp_path: Path) -> None:
 
     results = cmd_search("test", config_dir=str(tmp_path))
     assert results == []
+
+
+def test_index_source_single_file(tmp_path: Path) -> None:
+    """_index_source indexes a single file and returns section count."""
+    from knowledge.db import get_connection, ensure_schema
+    from knowledge.embed import SentenceTransformerEmbedder
+    from knowledge.indexer import _index_source
+    from knowledge.sources import Source
+
+    source = Source(
+        name="test-index",
+        source_type="git",
+        url="https://github.com/user/repo.git",
+    )
+    source_dir = tmp_path / "sources" / source.name
+    source_dir.mkdir(parents=True)
+    (source_dir / "doc.md").write_text("# Heading\nBody text.\n\n## Sub\nMore.")
+    db_path = tmp_path / "test.db"
+    conn = get_connection(db_path)
+    ensure_schema(conn, dim=384)
+    embedder = SentenceTransformerEmbedder(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
+    count = _index_source(source, embedder, conn, tmp_path, verbose=False)
+    assert count == 2
+    rows = conn.execute("SELECT title, body FROM sections ORDER BY id").fetchall()
+    assert rows[0]["title"] == "Heading"
+    assert rows[0]["body"] == "Body text."
+    assert rows[1]["title"] == "Sub"
+    conn.close()
+
+
+def test_cmd_index_orphan_cleanup(tmp_path: Path, monkeypatch) -> None:
+    """cmd_index removes sources no longer in sources.yaml."""
+    from knowledge.config import resolve_data_dir, ensure_data_dir
+    from knowledge.db import get_connection, ensure_schema
+    from knowledge.indexer import cmd_index
+
+    # Create a sources.yaml with one source
+    sources_yml = tmp_path / "sources.yaml"
+    sources_yml.write_text(
+        "sources:\n  - name: orphaned\n    source_type: git\n    url: https://github.com/user/repo.git\n"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    # Manually insert fake data to simulate orphaned rows
+    data_dir = ensure_data_dir(resolve_data_dir(str(tmp_path)))
+    db_path = data_dir / "index.db"
+    conn = get_connection(db_path)
+    ensure_schema(conn, dim=384)
+    conn.execute(
+        "INSERT INTO sections (source, title, category, path, heading_path, body) VALUES (?,?,?,?,?,?)",
+        ("old-source", "orphan", "", "p", "", "body"),
+    )
+    conn.execute(
+        "INSERT INTO source_state (name, git_head) VALUES (?, ?)",
+        ("old-source", "abc123"),
+    )
+    conn.execute("INSERT INTO index_meta (key, value) VALUES ('embedding_dim', '384')")
+    conn.commit()
+    conn.close()
+
+    # Write a config.yaml so cmd_index uses MiniLM (dim=384)
+    (tmp_path / "config.yaml").write_text(
+        "embed:\n  model: sentence-transformers/all-MiniLM-L6-v2\n"
+    )
+
+    # Run cmd_index — should remove old-source from tables
+    cmd_index(config_dir=str(tmp_path), force=False, verbose=False)
+
+    conn2 = get_connection(db_path)
+    remaining = conn2.execute("SELECT source FROM sections").fetchall()
+    assert len(remaining) == 0
+    conn2.close()
+
+
+def test_cmd_index_force_rebuild(tmp_path: Path, monkeypatch) -> None:
+    """--force drops and recreates all tables, then indexes fresh."""
+    from knowledge.config import resolve_data_dir, ensure_data_dir
+    from knowledge.db import get_connection, ensure_schema
+    from knowledge.indexer import cmd_index
+
+    sources_yml = tmp_path / "sources.yaml"
+    sources_yml.write_text(
+        "sources:\n  - name: test-force\n    source_type: local\n    path: /tmp/nonexistent\n"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    # Create a stale index with different dim
+    data_dir = ensure_data_dir(resolve_data_dir(str(tmp_path)))
+    db_path = data_dir / "index.db"
+    conn = get_connection(db_path)
+    ensure_schema(conn, dim=384)
+    conn.execute("INSERT INTO index_meta (key, value) VALUES ('embedding_dim', '768')")
+    conn.commit()
+    conn.close()
+
+    # Write a config.yaml so cmd_index uses MiniLM (dim=384)
+    (tmp_path / "config.yaml").write_text(
+        "embed:\n  model: sentence-transformers/all-MiniLM-L6-v2\n"
+    )
+
+    # Force rebuild — should replace with current model dim (384)
+    cmd_index(config_dir=str(tmp_path), force=True, verbose=False)
+
+    conn2 = get_connection(db_path)
+    new_dim = conn2.execute(
+        "SELECT value FROM index_meta WHERE key = 'embedding_dim'"
+    ).fetchone()[0]
+    assert new_dim == "384"
+    conn2.close()
