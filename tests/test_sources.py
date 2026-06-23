@@ -75,6 +75,19 @@ class TestSource:
         assert s.category == "docs"
         assert s.docs_dir == "docs/"
 
+    def test_title_default(self):
+        s = Source(name="test", type="git", url="https://github.com/user/repo.git")
+        assert s.title == ""
+
+    def test_custom_title(self):
+        s = Source(
+            name="test",
+            type="git",
+            url="https://github.com/user/repo.git",
+            title="My Docs",
+        )
+        assert s.title == "My Docs"
+
 
 class TestLoadSources:
     def test_basic_sources_yaml(self, tmp_path):
@@ -149,3 +162,29 @@ class TestLoadSources:
         sources = load_sources(path)
         assert sources[0].category == "documentation"
         assert sources[0].docs_dir == "docs/"
+
+    def test_title_from_yaml(self, tmp_path):
+        path = tmp_path / "sources.yaml"
+        data = {
+            "sources": [
+                {
+                    "name": "titled",
+                    "url": "https://github.com/user/repo.git",
+                    "title": "My Documentation",
+                },
+            ]
+        }
+        path.write_text(yaml.dump(data))
+        sources = load_sources(path)
+        assert sources[0].title == "My Documentation"
+
+    def test_title_default_from_yaml(self, tmp_path):
+        path = tmp_path / "sources.yaml"
+        data = {
+            "sources": [
+                {"name": "untitled", "url": "https://github.com/user/repo.git"},
+            ]
+        }
+        path.write_text(yaml.dump(data))
+        sources = load_sources(path)
+        assert sources[0].title == ""

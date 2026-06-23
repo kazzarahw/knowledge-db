@@ -10,6 +10,10 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 
+class ConfigError(ValueError):
+    """Configuration error — invalid or missing source config."""
+
+
 _GIT_URL_RE = re.compile(r"^(https?://|git@|ssh://git@)[\w.:/-]+(?:\.git)?/?$")
 
 
@@ -32,6 +36,7 @@ class Source:
     index_ext: tuple[str, ...] = field(
         default_factory=lambda: (".md", ".mdx", ".rst", ".txt", ".py")
     )
+    title: str = ""
     category: str = ""
     docs_dir: Optional[str] = None
 
@@ -91,6 +96,7 @@ def load_sources(path: Path) -> List[Source]:
         )
         category = entry.get("category", "")
         docs_dir = entry.get("docs_dir")
+        title = entry.get("title", "")
 
         source = Source(
             name=name,
@@ -101,6 +107,7 @@ def load_sources(path: Path) -> List[Source]:
             branch=branch,
             sparse=sparse,
             index_ext=index_ext,
+            title=title,
             category=category,
             docs_dir=docs_dir,
         )
