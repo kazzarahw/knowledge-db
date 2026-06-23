@@ -107,11 +107,7 @@ class TestLoadSources:
         data = {
             "sources": [
                 {"name": "grimoire", "url": "https://github.com/user/grimoire.git"},
-                {
-                    "name": "local_docs",
-                    "source_type": "local",
-                    "path": "/home/user/docs",
-                },
+                {"name": "local_docs", "type": "local", "path": "/home/user/docs"},
             ]
         }
         path.write_text(yaml.dump(data))

@@ -88,7 +88,7 @@ def load_sources(path: Path) -> list[Source]:
             raise ConfigError(f"Duplicate source name: {name!r}")
         seen_names.add(name)
 
-        src_type = entry.get("source_type", "git")
+        src_type = entry.get("type", "git")
         url = entry.get("url")
         path_val = entry.get("path")
         branch = entry.get("branch")

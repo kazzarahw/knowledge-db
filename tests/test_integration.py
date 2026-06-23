@@ -143,7 +143,7 @@ def test_cmd_index_orphan_cleanup(tmp_path: Path, monkeypatch) -> None:
     # Create a sources.yaml with one source
     sources_yml = tmp_path / "sources.yaml"
     sources_yml.write_text(
-        "sources:\n  - name: orphaned\n    source_type: git\n    url: https://github.com/user/repo.git\n"
+        "sources:\n  - name: orphaned\n    type: git\n    url: https://github.com/user/repo.git\n"
     )
     monkeypatch.chdir(tmp_path)
 
@@ -186,7 +186,7 @@ def test_cmd_index_force_rebuild(tmp_path: Path, monkeypatch) -> None:
 
     sources_yml = tmp_path / "sources.yaml"
     sources_yml.write_text(
-        "sources:\n  - name: test-force\n    source_type: local\n    path: /tmp/nonexistent\n"
+        "sources:\n  - name: test-force\n    type: local\n    path: /tmp/nonexistent\n"
     )
     monkeypatch.chdir(tmp_path)
 
