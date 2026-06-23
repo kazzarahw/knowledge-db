@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -50,6 +50,8 @@ def _clone(source: Source, dest: Path, verbose: bool) -> bool:
         cmd = ["git", "clone", "--depth", "1"]
         if source.sparse:
             cmd += ["--filter=blob:none", "--sparse"]
+        if source.branch:
+            cmd += ["--branch", source.branch]
         cmd += [repo_url, tmpdir]
 
         if verbose:
@@ -57,12 +59,24 @@ def _clone(source: Source, dest: Path, verbose: bool) -> bool:
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            print(f"  Error cloning {source.name}: {result.stderr.strip()}")
+            print(
+                f"  Error cloning {source.name}: {result.stderr.strip()}",
+                file=sys.stderr,
+            )
             return False
 
         if source.sparse:
-            sparse_cmd = ["git", "-C", tmpdir, "sparse-checkout", "set", *source.sparse]
-            subprocess.run(sparse_cmd, capture_output=True, text=True)
+            sparse_result = subprocess.run(
+                ["git", "-C", tmpdir, "sparse-checkout", "set", *source.sparse],
+                capture_output=True,
+                text=True,
+            )
+            if sparse_result.returncode != 0:
+                print(
+                    f"  Error setting sparse-checkout for {source.name}: {sparse_result.stderr.strip()}",
+                    file=sys.stderr,
+                )
+                return False
 
         lfs_check = subprocess.run(
             ["git", "-C", tmpdir, "lfs", "track"],
@@ -71,18 +85,22 @@ def _clone(source: Source, dest: Path, verbose: bool) -> bool:
         )
         if lfs_check.returncode == 0 and lfs_check.stdout.strip():
             if shutil.which("git-lfs"):
-                subprocess.run(
+                lfs_result = subprocess.run(
                     ["git", "-C", tmpdir, "lfs", "pull"], capture_output=True
                 )
+                if lfs_result.returncode != 0:
+                    print(
+                        f"  Error pulling LFS for {source.name}: {lfs_result.stderr.strip()}",
+                        file=sys.stderr,
+                    )
+                    return False
             else:
                 print(
-                    f"  Warning: {source.name} uses Git LFS but git-lfs is not installed"
+                    f"  Warning: {source.name} uses Git LFS but git-lfs is not installed",
+                    file=sys.stderr,
                 )
 
-        try:
-            os.rename(tmpdir, str(dest))
-        except OSError:
-            shutil.copytree(tmpdir, str(dest), dirs_exist_ok=True)
+        shutil.move(tmpdir, str(dest))
 
     return True
 
@@ -92,13 +110,22 @@ def _pull(source: Source, dest: Path, verbose: bool) -> bool:
     if verbose:
         print(f"  Pulling {source.name}")
 
-    before = subprocess.run(
-        ["git", "-C", str(dest), "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-    )
-    if before.returncode != 0:
-        print(f"  Error reading HEAD for {source.name}")
+    if source.branch:
+        checkout_result = subprocess.run(
+            ["git", "-C", str(dest), "checkout", source.branch],
+            capture_output=True,
+            text=True,
+        )
+        if checkout_result.returncode != 0:
+            print(
+                f"  Error checking out branch {source.branch} for {source.name}: {checkout_result.stderr.strip()}",
+                file=sys.stderr,
+            )
+            return False
+
+    before = get_git_head(dest)
+    if before is None:
+        print(f"  Error reading HEAD for {source.name}", file=sys.stderr)
         return False
 
     status = subprocess.run(
@@ -121,20 +148,21 @@ def _pull(source: Source, dest: Path, verbose: bool) -> bool:
             text=True,
         )
         if fsck.returncode != 0:
-            print(f"  {source.name} is corrupt (fsck failed). Re-cloning...")
+            print(
+                f"  {source.name} is corrupt (fsck failed). Re-cloning...",
+                file=sys.stderr,
+            )
             shutil.rmtree(str(dest))
             return _clone(source, dest, verbose)
-        print(f"  Error pulling {source.name}: {result.stderr.strip()}")
+        print(
+            f"  Error pulling {source.name}: {result.stderr.strip()}", file=sys.stderr
+        )
         return False
 
-    after = subprocess.run(
-        ["git", "-C", str(dest), "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-    )
-    head_before = before.stdout.strip()
-    head_after = after.stdout.strip()
-    return head_before != head_after
+    after = get_git_head(dest)
+    if after is None:
+        return False
+    return before != after
 
 
 def get_git_head(source_dir: Path) -> str | None:
