@@ -43,3 +43,42 @@ def test_clone_invalid_url(tmp_path):
         name="bad-url", source_type="git", url="https://invalid.example.com/repo"
     )
     assert _clone(src, tmp_path / "bad-url", verbose=False) is False
+
+
+def test_pull_nonexistent_dir_returns_false(tmp_path: Path) -> None:
+    """_pull on nonexistent directory returns False, not crash."""
+    from knowledge.fetch import _pull
+
+    src = Source(
+        name="ghost",
+        source_type="git",
+        url="https://github.com/user/repo.git",
+    )
+    assert _pull(src, tmp_path / "ghost", verbose=False) is False
+
+
+def test_pull_local_repo_no_remote(tmp_path: Path) -> None:
+    """_pull on a git repo with no remote returns False."""
+    import subprocess
+    from knowledge.fetch import _pull
+
+    src = Source(
+        name="local-pull",
+        source_type="git",
+        url="https://github.com/user/repo.git",
+    )
+    dest = tmp_path / "local-pull"
+    dest.mkdir()
+    subprocess.run(["git", "init"], cwd=dest, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@test"], cwd=str(dest), capture_output=True
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"], cwd=str(dest), capture_output=True
+    )
+    (dest / "file.md").write_text("# test")
+    subprocess.run(["git", "add", "."], cwd=dest, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=dest, capture_output=True)
+    # No remote → pull fails → returns False
+    result = _pull(src, dest, verbose=False)
+    assert result is False
