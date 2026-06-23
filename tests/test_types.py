@@ -55,3 +55,20 @@ def test_search_result_is_typeddict() -> None:
     assert isinstance(elem, typing.TypeVar) or hasattr(elem, "__annotations__"), (
         f"element type {elem} is not a TypedDict"
     )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "knowledge/__init__.py",
+        "tests/__init__.py",
+    ],
+)
+def test_init_py_has_module_docstring(path: str) -> None:
+    from pathlib import Path
+
+    text = Path(path).read_text(encoding="utf-8")
+    stripped = text.lstrip()
+    assert stripped.startswith('"""') or stripped.startswith("'''"), (
+        f"{path} is empty or missing module docstring"
+    )
