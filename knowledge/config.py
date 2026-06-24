@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 VERSION = "0.1.0"
@@ -12,32 +13,136 @@ DATA_DIR_ENV_VAR = "KNOWLEDGE_DB_DIR"
 DEFAULT_MODEL = "LiquidAI/LFM2.5-Embedding-350M"
 
 
-def load_config(config_dir: Path) -> dict[str, str | None]:
+@dataclass(frozen=True, slots=True)
+class EmbedConfig:
+    model: str = DEFAULT_MODEL
+    device: str | None = None
+    batch_size: int = 32
+    trust_remote_code: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class FetchConfig:
+    git_timeout: int = 300
+
+
+@dataclass(frozen=True, slots=True)
+class IndexConfig:
+    doc_extensions: tuple[str, ...] = field(
+        default_factory=lambda: (
+            ".md",
+            ".markdown",
+            ".mdx",
+            ".rst",
+            ".txt",
+            ".yml",
+            ".yaml",
+            ".ipynb",
+        )
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class SearchConfig:
+    default_top_k: int = 10
+
+
+@dataclass(frozen=True, slots=True)
+class Config:
+    embed: EmbedConfig = field(default_factory=EmbedConfig)
+    fetch: FetchConfig = field(default_factory=FetchConfig)
+    index: IndexConfig = field(default_factory=IndexConfig)
+    search: SearchConfig = field(default_factory=SearchConfig)
+
+
+def _parse_embed(raw: object) -> EmbedConfig:
+    """Parse embed section from raw YAML dict into EmbedConfig."""
+    if not isinstance(raw, dict):
+        return EmbedConfig()
+    model = raw.get("model", DEFAULT_MODEL)
+    if not isinstance(model, str):
+        model = DEFAULT_MODEL
+    device = raw.get("device")
+    if not isinstance(device, str):
+        device = None
+    batch_size = raw.get("batch_size", 32)
+    if not isinstance(batch_size, int):
+        batch_size = 32
+    trust_remote_code = raw.get("trust_remote_code", True)
+    if not isinstance(trust_remote_code, bool):
+        trust_remote_code = True
+    return EmbedConfig(
+        model=model,
+        device=device,
+        batch_size=batch_size,
+        trust_remote_code=trust_remote_code,
+    )
+
+
+def _parse_fetch(raw: object) -> FetchConfig:
+    """Parse fetch section from raw YAML dict into FetchConfig."""
+    if not isinstance(raw, dict):
+        return FetchConfig()
+    git_timeout = raw.get("git_timeout", 300)
+    if not isinstance(git_timeout, int):
+        git_timeout = 300
+    return FetchConfig(git_timeout=git_timeout)
+
+
+def _parse_index(raw: object) -> IndexConfig:
+    """Parse index section from raw YAML dict into IndexConfig."""
+    if not isinstance(raw, dict):
+        return IndexConfig()
+    doc_extensions = raw.get("doc_extensions")
+    if isinstance(doc_extensions, list) and all(
+        isinstance(e, str) for e in doc_extensions
+    ):
+        return IndexConfig(doc_extensions=tuple(doc_extensions))
+    return IndexConfig()
+
+
+def _parse_search(raw: object) -> SearchConfig:
+    """Parse search section from raw YAML dict into SearchConfig."""
+    if not isinstance(raw, dict):
+        return SearchConfig()
+    default_top_k = raw.get("default_top_k", 10)
+    if not isinstance(default_top_k, int):
+        default_top_k = 10
+    return SearchConfig(default_top_k=default_top_k)
+
+
+def load_config(config_dir: str | Path | None = None) -> Config:
     """Load config.yaml from a config directory.
 
-    Returns a dict with optional keys: model (str), device (str | None).
-    Missing or invalid files fall back to defaults silently.
+    Returns a Config dataclass populated from the YAML file.
+    Missing or invalid files/sections fall back to defaults silently.
+
+    Args:
+        config_dir: Directory containing config.yaml. When None or
+            nonexistent, returns fully defaulted Config.
+
+    Returns:
+        A Config dataclass with values parsed from config.yaml or defaults.
     """
-    config_path = config_dir / "config.yaml"
+    if config_dir is None:
+        return Config()
+    config_path = Path(config_dir) / "config.yaml"
     if not config_path.exists():
-        return {"model": DEFAULT_MODEL, "device": None}
+        return Config()
     try:
         import yaml
 
         raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
-            return {"model": DEFAULT_MODEL, "device": None}
-        embed = raw.get("embed", {}) or {}
-        if not isinstance(embed, dict):
-            return {"model": DEFAULT_MODEL, "device": None}
-        raw_model = embed.get("model", DEFAULT_MODEL)
-        raw_device = embed.get("device")
-        return {
-            "model": raw_model if isinstance(raw_model, str) else DEFAULT_MODEL,
-            "device": str(raw_device) if isinstance(raw_device, str) else None,
-        }
+            return Config()
+        return Config(
+            embed=_parse_embed(raw.get("embed")),
+            fetch=_parse_fetch(raw.get("fetch")),
+            index=_parse_index(raw.get("index")),
+            search=_parse_search(raw.get("search")),
+        )
     except Exception:
-        return {"model": DEFAULT_MODEL, "device": None}
+        return Config()
 
 
 def resolve_data_dir(override: str | None = None) -> Path:
