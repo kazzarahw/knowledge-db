@@ -60,7 +60,11 @@ def main() -> None:
             data_dir = ensure_data_dir(resolve_data_dir(args.config))
             sources = load_sources(resolve_sources_yaml(args.config))
             changed = fetch_sources(
-                sources, data_dir, only=args.only, verbose=args.verbose
+                sources,
+                data_dir,
+                only=args.only,
+                verbose=args.verbose,
+                config_dir=args.config,
             )
             if changed:
                 print(f"Updated: {', '.join(changed)}")
@@ -81,7 +85,9 @@ def main() -> None:
             data_dir = ensure_data_dir(resolve_data_dir(args.config))
             sources = load_sources(resolve_sources_yaml(args.config))
             print("Fetching sources...")
-            fetch_sources(sources, data_dir, verbose=args.verbose)
+            fetch_sources(
+                sources, data_dir, verbose=args.verbose, config_dir=args.config
+            )
             print("Indexing...")
             cmd_index(config_dir=args.config, force=args.force, verbose=args.verbose)
 

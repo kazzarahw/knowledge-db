@@ -42,7 +42,7 @@ def test_clone_invalid_url(tmp_path):
     src = Source(
         name="bad-url", source_type="git", url="https://invalid.example.com/repo"
     )
-    assert _clone(src, tmp_path / "bad-url", verbose=False) is False
+    assert _clone(src, tmp_path / "bad-url", verbose=False, git_timeout=300) is False
 
 
 def test_pull_nonexistent_dir_returns_false(tmp_path: Path) -> None:
@@ -54,7 +54,7 @@ def test_pull_nonexistent_dir_returns_false(tmp_path: Path) -> None:
         source_type="git",
         url="https://github.com/user/repo.git",
     )
-    assert _pull(src, tmp_path / "ghost", verbose=False) is False
+    assert _pull(src, tmp_path / "ghost", verbose=False, git_timeout=300) is False
 
 
 def test_pull_local_repo_no_remote(tmp_path: Path) -> None:
@@ -88,5 +88,5 @@ def test_pull_local_repo_no_remote(tmp_path: Path) -> None:
         ["git", "commit", "-m", "initial"], cwd=dest, capture_output=True, check=True
     )
     # No remote → pull fails → returns False
-    result = _pull(src, dest, verbose=False)
+    result = _pull(src, dest, verbose=False, git_timeout=300)
     assert result is False

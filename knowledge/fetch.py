@@ -10,37 +10,43 @@ from pathlib import Path
 
 from knowledge.sources import Source
 
-_GIT_TIMEOUT = 300
-
 
 def fetch_sources(
     sources: list[Source],
     data_dir: Path,
     only: str | None = None,
     verbose: bool = False,
+    config_dir: str | None = None,
 ) -> list[str]:
     """Clone/pull all (or one) sources. Returns list of changed source names."""
+    from knowledge.config import load_config
+
+    cfg = load_config(config_dir)
+    git_timeout = cfg.fetch.git_timeout
+
     changed = []
     for src in sources:
         if only and src.name != only:
             continue
         if src.source_type == "local":
             continue
-        if _fetch_git_source(src, data_dir, verbose):
+        if _fetch_git_source(src, data_dir, verbose, git_timeout):
             changed.append(src.name)
     return changed
 
 
-def _fetch_git_source(source: Source, data_dir: Path, verbose: bool) -> bool:
+def _fetch_git_source(
+    source: Source, data_dir: Path, verbose: bool, git_timeout: int
+) -> bool:
     """Clone or pull a single git source. Returns True if HEAD changed."""
     dest = data_dir / "sources" / source.name
 
     if not dest.exists():
-        return _clone(source, dest, verbose)
-    return _pull(source, dest, verbose)
+        return _clone(source, dest, verbose, git_timeout)
+    return _pull(source, dest, verbose, git_timeout)
 
 
-def _clone(source: Source, dest: Path, verbose: bool) -> bool:
+def _clone(source: Source, dest: Path, verbose: bool, git_timeout: int) -> bool:
     """Atomically clone a git repo into a temp dir, then rename."""
     repo_url = source.url
     parent = dest.parent
@@ -61,11 +67,11 @@ def _clone(source: Source, dest: Path, verbose: bool) -> bool:
 
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=_GIT_TIMEOUT
+                cmd, capture_output=True, text=True, timeout=git_timeout
             )
         except subprocess.TimeoutExpired:
             print(
-                f"  Error: {source.name} clone timed out after {_GIT_TIMEOUT}s",
+                f"  Error: {source.name} clone timed out after {git_timeout}s",
                 file=sys.stderr,
             )
             return False
@@ -82,11 +88,11 @@ def _clone(source: Source, dest: Path, verbose: bool) -> bool:
                     ["git", "-C", tmpdir, "sparse-checkout", "set", *source.sparse],
                     capture_output=True,
                     text=True,
-                    timeout=_GIT_TIMEOUT,
+                    timeout=git_timeout,
                 )
             except subprocess.TimeoutExpired:
                 print(
-                    f"  Error: {source.name} sparse-checkout timed out after {_GIT_TIMEOUT}s",
+                    f"  Error: {source.name} sparse-checkout timed out after {git_timeout}s",
                     file=sys.stderr,
                 )
                 return False
@@ -101,7 +107,7 @@ def _clone(source: Source, dest: Path, verbose: bool) -> bool:
             ["git", "-C", tmpdir, "lfs", "track"],
             capture_output=True,
             text=True,
-            timeout=_GIT_TIMEOUT,
+            timeout=git_timeout,
         )
         if lfs_check.returncode == 0 and lfs_check.stdout.strip():
             if shutil.which("git-lfs"):
@@ -109,11 +115,11 @@ def _clone(source: Source, dest: Path, verbose: bool) -> bool:
                     lfs_result = subprocess.run(
                         ["git", "-C", tmpdir, "lfs", "pull"],
                         capture_output=True,
-                        timeout=_GIT_TIMEOUT,
+                        timeout=git_timeout,
                     )
                 except subprocess.TimeoutExpired:
                     print(
-                        f"  Error: {source.name} LFS pull timed out after {_GIT_TIMEOUT}s",
+                        f"  Error: {source.name} LFS pull timed out after {git_timeout}s",
                         file=sys.stderr,
                     )
                     return False
@@ -134,7 +140,7 @@ def _clone(source: Source, dest: Path, verbose: bool) -> bool:
     return True
 
 
-def _pull(source: Source, dest: Path, verbose: bool) -> bool:
+def _pull(source: Source, dest: Path, verbose: bool, git_timeout: int) -> bool:
     """Pull existing repo. Returns True if HEAD changed."""
     if verbose:
         print(f"  Pulling {source.name}")
@@ -145,11 +151,11 @@ def _pull(source: Source, dest: Path, verbose: bool) -> bool:
                 ["git", "-C", str(dest), "checkout", source.branch],
                 capture_output=True,
                 text=True,
-                timeout=_GIT_TIMEOUT,
+                timeout=git_timeout,
             )
         except subprocess.TimeoutExpired:
             print(
-                f"  Error: {source.name} checkout timed out after {_GIT_TIMEOUT}s",
+                f"  Error: {source.name} checkout timed out after {git_timeout}s",
                 file=sys.stderr,
             )
             return False
@@ -160,7 +166,7 @@ def _pull(source: Source, dest: Path, verbose: bool) -> bool:
             )
             return False
 
-    before = get_git_head(dest)
+    before = get_git_head(dest, git_timeout)
     if before is None:
         print(f"  Error reading HEAD for {source.name}", file=sys.stderr)
         return False
@@ -170,11 +176,11 @@ def _pull(source: Source, dest: Path, verbose: bool) -> bool:
             ["git", "-C", str(dest), "status", "--porcelain"],
             capture_output=True,
             text=True,
-            timeout=_GIT_TIMEOUT,
+            timeout=git_timeout,
         )
     except subprocess.TimeoutExpired:
         print(
-            f"  Error: {source.name} status timed out after {_GIT_TIMEOUT}s",
+            f"  Error: {source.name} status timed out after {git_timeout}s",
             file=sys.stderr,
         )
         return False
@@ -186,11 +192,11 @@ def _pull(source: Source, dest: Path, verbose: bool) -> bool:
             ["git", "-C", str(dest), "pull", "--ff-only"],
             capture_output=True,
             text=True,
-            timeout=_GIT_TIMEOUT,
+            timeout=git_timeout,
         )
     except subprocess.TimeoutExpired:
         print(
-            f"  Error: {source.name} pull timed out after {_GIT_TIMEOUT}s",
+            f"  Error: {source.name} pull timed out after {git_timeout}s",
             file=sys.stderr,
         )
         return False
@@ -200,11 +206,11 @@ def _pull(source: Source, dest: Path, verbose: bool) -> bool:
                 ["git", "-C", str(dest), "fsck"],
                 capture_output=True,
                 text=True,
-                timeout=_GIT_TIMEOUT,
+                timeout=git_timeout,
             )
         except subprocess.TimeoutExpired:
             print(
-                f"  Error: {source.name} fsck timed out after {_GIT_TIMEOUT}s",
+                f"  Error: {source.name} fsck timed out after {git_timeout}s",
                 file=sys.stderr,
             )
             return False
@@ -214,13 +220,13 @@ def _pull(source: Source, dest: Path, verbose: bool) -> bool:
                 file=sys.stderr,
             )
             shutil.rmtree(str(dest))
-            return _clone(source, dest, verbose)
+            return _clone(source, dest, verbose, git_timeout)
         print(
             f"  Error pulling {source.name}: {result.stderr.strip()}", file=sys.stderr
         )
         return False
 
-    after = get_git_head(dest)
+    after = get_git_head(dest, git_timeout)
     if after is None:
         return False
 
@@ -230,7 +236,7 @@ def _pull(source: Source, dest: Path, verbose: bool) -> bool:
             ["git", "-C", str(dest), "lfs", "track"],
             capture_output=True,
             text=True,
-            timeout=_GIT_TIMEOUT,
+            timeout=git_timeout,
         )
     except subprocess.TimeoutExpired:
         print(
@@ -245,7 +251,7 @@ def _pull(source: Source, dest: Path, verbose: bool) -> bool:
                 lfs_result = subprocess.run(
                     ["git", "-C", str(dest), "lfs", "pull"],
                     capture_output=True,
-                    timeout=_GIT_TIMEOUT,
+                    timeout=git_timeout,
                 )
             except subprocess.TimeoutExpired:
                 print(
@@ -260,14 +266,14 @@ def _pull(source: Source, dest: Path, verbose: bool) -> bool:
     return before != after
 
 
-def get_git_head(source_dir: Path) -> str | None:
+def get_git_head(source_dir: Path, git_timeout: int = 300) -> str | None:
     """Get current git HEAD for a source directory. Returns None if not a git repo."""
     try:
         result = subprocess.run(
             ["git", "-C", str(source_dir), "rev-parse", "HEAD"],
             capture_output=True,
             text=True,
-            timeout=_GIT_TIMEOUT,
+            timeout=git_timeout,
         )
         if result.returncode == 0:
             return result.stdout.strip()
