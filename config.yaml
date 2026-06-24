@@ -1,0 +1,38 @@
+# knowledge-db configuration
+# Place alongside sources.yaml in your config directory.
+# All fields have sensible defaults; uncomment to override.
+
+# ── Embedding settings ─────────────────────────────────────────────
+embed:
+  # Sentence-transformers model name (HuggingFace Hub ID or local path)
+  model: LiquidAI/LFM2.5-Embedding-350M
+  # Inference device: null = auto-detect (CUDA if available, else CPU)
+  device: null
+  # Sections per SentenceTransformer.encode() call
+  # Larger = faster GPU utilization but more memory
+  batch_size: 32
+  # Allow models with custom HF Hub code (required by some models)
+  # trust_remote_code: true
+
+# ── Git fetch settings ─────────────────────────────────────────────
+# fetch:
+#   # Max seconds per git subprocess call (clone, pull, checkout, LFS)
+#   git_timeout: 300
+
+# ── Index pipeline settings ────────────────────────────────────────
+# index:
+#   # Base file extensions to index (per-source index_ext adds to this)
+#   doc_extensions:
+#     - .md
+#     - .markdown
+#     - .mdx
+#     - .rst
+#     - .txt
+#     - .yml
+#     - .yaml
+#     - .ipynb
+
+# ── Search defaults ────────────────────────────────────────────────
+# search:
+#   # Default result count when --top-k is omitted on the CLI
+#   default_top_k: 10
