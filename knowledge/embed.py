@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 import numpy as np
+from knowledge.config import DEFAULT_MODEL
 
 
 def get_embedder(
@@ -25,22 +26,25 @@ def get_embedder(
     Cache is stored as a function attribute to avoid module-level
     mutable state (``_embedder`` would be a global anti-pattern).
     """
-    if config_dir:
-        from knowledge.config import load_config
+    from knowledge.config import load_config
 
+    trust_remote_code = True
+    if config_dir:
         cfg = load_config(Path(config_dir))
         if model_name is None:
-            cfg_model = cfg.get("model")
-            model_name = cfg_model or "LiquidAI/LFM2.5-Embedding-350M"
+            model_name = cfg.embed.model or DEFAULT_MODEL
         if device is None:
-            device = cfg.get("device")
+            device = cfg.embed.device
+        trust_remote_code = cfg.embed.trust_remote_code
     if model_name is None:
-        model_name = "LiquidAI/LFM2.5-Embedding-350M"
+        model_name = DEFAULT_MODEL
     cached = getattr(get_embedder, "_cached", None)
     if cached is not None and cached.model_name == model_name:
         if device is None or cached._device == device:
             return cached
-    cached = SentenceTransformerEmbedder(model_name, device=device)
+    cached = SentenceTransformerEmbedder(
+        model_name, device=device, trust_remote_code=trust_remote_code
+    )
     get_embedder._cached = cached
     return cached
 
@@ -89,8 +93,9 @@ class SentenceTransformerEmbedder(Embedder):
 
     def __init__(
         self,
-        model_name: str = "LiquidAI/LFM2.5-Embedding-350M",
+        model_name: str = DEFAULT_MODEL,
         device: str | None = None,
+        trust_remote_code: bool = True,
     ) -> None:
         from sentence_transformers import SentenceTransformer
 
@@ -98,7 +103,7 @@ class SentenceTransformerEmbedder(Embedder):
         self._model = SentenceTransformer(
             model_name,
             device=resolved,
-            trust_remote_code=True,
+            trust_remote_code=trust_remote_code,
         )
         self.model_name = model_name
         self._device = resolved

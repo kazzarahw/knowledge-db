@@ -19,19 +19,6 @@ from knowledge.embed import SentenceTransformerEmbedder, get_embedder
 from knowledge.fetch import fetch_sources, get_git_head
 from knowledge.sources import Source, load_sources
 
-DOC_EXTENSIONS: set[str] = {
-    ".md",
-    ".markdown",
-    ".mdx",
-    ".rst",
-    ".txt",
-    ".yml",
-    ".yaml",
-    ".ipynb",
-}
-
-BATCH_SIZE = 32
-
 
 def _source_signature(source_dir: Path) -> str | None:
     if not source_dir.exists():
@@ -49,7 +36,14 @@ def _source_signature(source_dir: Path) -> str | None:
     return h.hexdigest()[:32]
 
 
-def _walk_files(source_dir: Path, source: Source) -> list[Path]:
+def _walk_files(
+    source_dir: Path, source: Source, cfg: Config | None = None
+) -> list[Path]:
+    from knowledge.config import Config, load_config
+
+    if cfg is None:
+        cfg = load_config()
+
     base = source_dir
     if source.docs_dir:
         base = source_dir / source.docs_dir
@@ -57,7 +51,7 @@ def _walk_files(source_dir: Path, source: Source) -> list[Path]:
             base = source_dir
 
     extra_exts = set(source.index_ext or ())
-    valid_exts = DOC_EXTENSIONS | extra_exts
+    valid_exts = set(cfg.index.doc_extensions) | extra_exts
 
     files: list[Path] = []
     for fpath in base.rglob("*"):
@@ -77,13 +71,21 @@ def _index_source(
     data_dir: Path,
     verbose: bool,
     current_head: str | None = None,
+    cfg: Config | None = None,
 ) -> int:
+    from knowledge.config import Config
+
+    if cfg is None:
+        from knowledge.config import load_config
+
+        cfg = load_config()
+
     source_dir = data_dir / "sources" / source.name
     if not source_dir.exists():
         print(f"  Warning: source directory for '{source.name}' not found -- skipping")
         return 0
 
-    files = _walk_files(source_dir, source)
+    files = _walk_files(source_dir, source, cfg)
     if verbose:
         print(f"  Walking {len(files)} files in {source.name}")
 
@@ -104,7 +106,8 @@ def _index_source(
     texts = [s.body for s in all_sections]
     all_embeddings: list[np.ndarray] = []
 
-    iterator = range(0, len(texts), BATCH_SIZE)
+    batch_size = cfg.embed.batch_size
+    iterator = range(0, len(texts), batch_size)
     try:
         from tqdm import tqdm
 
@@ -113,7 +116,7 @@ def _index_source(
         pass
 
     for batch_start in iterator:
-        batch_texts = texts[batch_start : batch_start + BATCH_SIZE]
+        batch_texts = texts[batch_start : batch_start + batch_size]
         batch_embeddings = embedder.embed(batch_texts)
         all_embeddings.append(batch_embeddings)
 
@@ -179,6 +182,9 @@ def cmd_index(
         force: Drop and recreate the entire index.
         verbose: Print per-file and per-source progress.
     """
+    from knowledge.config import load_config
+
+    cfg = load_config(config_dir)
     data_dir = ensure_data_dir(resolve_data_dir(config_dir))
     sources = load_sources(resolve_sources_yaml(config_dir))
     db_path = data_dir / "index.db"
@@ -287,7 +293,13 @@ def cmd_index(
         try:
             conn.execute("BEGIN")
             num_sections = _index_source(
-                source, embedder, conn, data_dir, verbose, current_head=current_head
+                source,
+                embedder,
+                conn,
+                data_dir,
+                verbose,
+                current_head=current_head,
+                cfg=cfg,
             )
             conn.commit()
             if verbose:

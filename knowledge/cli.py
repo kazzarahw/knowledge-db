@@ -34,7 +34,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_search = sub.add_parser("search", help="search indexed knowledge")
     p_search.add_argument("query", nargs="?", help="search query")
     p_search.add_argument("--json", action="store_true", help="JSON output")
-    p_search.add_argument("--top-k", type=int, default=10, help="number of results")
+    p_search.add_argument("--top-k", type=int, default=None, help="number of results")
     p_search.add_argument("--source", help="filter by source name")
 
     sub.add_parser("list-sources", help="list all configured sources")
@@ -48,10 +48,6 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        if args.command == "search" and args.top_k < 1:
-            print("Error: --top-k must be >= 1", file=sys.stderr)
-            sys.exit(1)
-
         if args.command == "fetch":
             from knowledge.fetch import fetch_sources
             from knowledge.config import ensure_data_dir
@@ -60,7 +56,11 @@ def main() -> None:
             data_dir = ensure_data_dir(resolve_data_dir(args.config))
             sources = load_sources(resolve_sources_yaml(args.config))
             changed = fetch_sources(
-                sources, data_dir, only=args.only, verbose=args.verbose
+                sources,
+                data_dir,
+                only=args.only,
+                verbose=args.verbose,
+                config_dir=args.config,
             )
             if changed:
                 print(f"Updated: {', '.join(changed)}")
@@ -81,20 +81,29 @@ def main() -> None:
             data_dir = ensure_data_dir(resolve_data_dir(args.config))
             sources = load_sources(resolve_sources_yaml(args.config))
             print("Fetching sources...")
-            fetch_sources(sources, data_dir, verbose=args.verbose)
+            fetch_sources(
+                sources, data_dir, verbose=args.verbose, config_dir=args.config
+            )
             print("Indexing...")
             cmd_index(config_dir=args.config, force=args.force, verbose=args.verbose)
 
         elif args.command == "search":
+            from knowledge.config import load_config
             from knowledge.search import cmd_search
 
             if not args.query:
                 print("Error: search query is required")
                 sys.exit(1)
 
+            cfg = load_config(args.config)
+            top_k = args.top_k if args.top_k is not None else cfg.search.default_top_k
+            if top_k < 1:
+                print("Error: --top-k must be >= 1", file=sys.stderr)
+                sys.exit(1)
+
             results = cmd_search(
                 query=args.query,
-                top_k=args.top_k,
+                top_k=top_k,
                 source=args.source,
                 config_dir=args.config,
             )

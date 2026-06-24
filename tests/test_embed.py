@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+from knowledge.config import Config, EmbedConfig
 from knowledge.embed import (
     Embedder,
     SentenceTransformerEmbedder,
@@ -60,7 +61,7 @@ def test_get_embedder_config_with_null_model():
         patch("knowledge.config.load_config") as mock_load,
         patch("knowledge.embed.SentenceTransformerEmbedder") as MockST,
     ):
-        mock_load.return_value = {"model": None}
+        mock_load.return_value = Config(embed=EmbedConfig(model=None))
         MockST.return_value = MagicMock(model_name="LiquidAI/LFM2.5-Embedding-350M")
 
         result = get_embedder(config_dir="/tmp/fake")
@@ -77,9 +78,11 @@ def test_get_embedder_recreates_on_device_change():
     if hasattr(get_embedder, "_cached"):
         del get_embedder._cached
     with patch("knowledge.embed.SentenceTransformerEmbedder") as MockST:
-        MockST.side_effect = lambda model_name, device=None: MagicMock(
-            model_name=model_name,
-            _device=device or "cpu",
+        MockST.side_effect = lambda model_name, device=None, trust_remote_code=True: (
+            MagicMock(
+                model_name=model_name,
+                _device=device or "cpu",
+            )
         )
 
         get_embedder(model_name="test-m", device="cpu")
