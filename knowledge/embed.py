@@ -105,6 +105,46 @@ class SentenceTransformerEmbedder(Embedder):
             device=resolved,
             trust_remote_code=trust_remote_code,
         )
+        # Monkey-patch for LiquidAI/LFM2.5-Embedding-350M compatibility.
+        # transformers v5.12+ passes ``seq_idx`` as a kwarg to decoder-layer
+        # forward methods.  The custom model's ``_noncausal_shortconv_forward``
+        # does not accept ``**kwargs``, so the unexpected kwarg crashes
+        # ``encode()`` with::
+        #
+        #   TypeError: _noncausal_shortconv_forward() got an unexpected
+        #   keyword argument 'seq_idx'
+        #
+        # The patch wraps ``Lfm2ShortConv.slow_forward`` (which after model
+        # loading is ``_noncausal_shortconv_forward``) to discard unexpected
+        # kwargs before forwarding.
+        #
+        # NOTE: this MUST run *after* ``SentenceTransformer(...)`` because the
+        # custom model's ``_install_patches()`` replaces ``slow_forward`` at
+        # module-import time, which would overwrite any prior patch.
+        if "lfm2" in model_name.lower() or "liquid" in model_name.lower():
+            import transformers.models.lfm2.modeling_lfm2 as _lfm2_mod
+
+            _orig_slow_forward = _lfm2_mod.Lfm2ShortConv.slow_forward
+
+            def _patched_slow_forward(
+                self,
+                hidden_states: torch.Tensor,
+                *args: object,
+                **kwargs: object,
+            ) -> torch.Tensor:
+                kept = {
+                    k: v
+                    for k, v in kwargs.items()
+                    if k
+                    in {
+                        "past_key_values",
+                        "cache_position",
+                        "attention_mask",
+                    }
+                }
+                return _orig_slow_forward(self, hidden_states, *args, **kept)
+
+            _lfm2_mod.Lfm2ShortConv.slow_forward = _patched_slow_forward
         self.model_name = model_name
         self._device = resolved
         self.dim = self._model.get_sentence_embedding_dimension()
