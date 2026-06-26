@@ -103,6 +103,7 @@ def _index_source(
     if not all_sections:
         return 0
 
+    all_sections.sort(key=lambda s: len(s.body))
     texts = [s.body for s in all_sections]
     all_embeddings: list[np.ndarray] = []
 

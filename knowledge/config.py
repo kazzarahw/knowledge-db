@@ -19,6 +19,7 @@ class EmbedConfig:
     device: str | None = None
     batch_size: int = 32
     trust_remote_code: bool = True
+    dtype: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,11 +72,15 @@ def _parse_embed(raw: object) -> EmbedConfig:
     trust_remote_code = raw.get("trust_remote_code", True)
     if not isinstance(trust_remote_code, bool):
         trust_remote_code = True
+    dtype = raw.get("dtype")
+    if not isinstance(dtype, str) or dtype not in ("auto", "bf16", "fp32"):
+        dtype = None
     return EmbedConfig(
         model=model,
         device=device,
         batch_size=batch_size,
         trust_remote_code=trust_remote_code,
+        dtype=dtype,
     )
 
 
