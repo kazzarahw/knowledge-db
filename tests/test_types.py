@@ -42,17 +42,17 @@ def test_function_has_return_annotation(
 
 def test_search_result_is_typeddict() -> None:
     """cmd_search must return a TypedDict, not dict[str, Any]."""
+    import typing
+
     from knowledge.search import cmd_search
 
-    sig = inspect.signature(cmd_search)
-    ret = sig.return_annotation
+    hints = typing.get_type_hints(cmd_search)
+    ret = hints.get("return")
     # Should be list[SearchResult] where SearchResult is a TypedDict
     assert hasattr(ret, "__origin__"), f"return type must be generic, got {ret}"
     assert ret.__origin__ is list, f"must be list[...], got {ret.__origin__}"
     elem = ret.__args__[0]
-    import typing
-
-    assert isinstance(elem, typing.TypeVar) or hasattr(elem, "__annotations__"), (
+    assert hasattr(elem, "__annotations__"), (
         f"element type {elem} is not a TypedDict"
     )
 

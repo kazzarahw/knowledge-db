@@ -1,5 +1,7 @@
 """Vector search via sqlite-vec CTE pattern."""
 
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 from typing import TypedDict
