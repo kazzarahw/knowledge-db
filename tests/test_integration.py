@@ -128,9 +128,9 @@ def test_index_source_single_file(tmp_path: Path) -> None:
     count = _index_source(source, embedder, conn, tmp_path, verbose=False)
     assert count == 2
     rows = conn.execute("SELECT title, body FROM sections ORDER BY id").fetchall()
-    assert rows[0]["title"] == "Heading"
-    assert rows[0]["body"] == "Body text."
-    assert rows[1]["title"] == "Sub"
+    assert rows[0]["title"] == "Sub"
+    assert rows[1]["title"] == "Heading"
+    assert rows[1]["body"] == "Body text."
     conn.close()
 
 

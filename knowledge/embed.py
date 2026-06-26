@@ -28,6 +28,7 @@ def get_embedder(
     """
     from knowledge.config import load_config
 
+    cfg = None
     trust_remote_code = True
     if config_dir:
         cfg = load_config(Path(config_dir))
@@ -38,12 +39,17 @@ def get_embedder(
         trust_remote_code = cfg.embed.trust_remote_code
     if model_name is None:
         model_name = DEFAULT_MODEL
+    dtype = cfg.embed.dtype if cfg is not None else None
     cached = getattr(get_embedder, "_cached", None)
     if cached is not None and cached.model_name == model_name:
-        if device is None or cached._device == device:
+        if (device is None or cached._device == device) and cached._dtype == dtype:
             return cached
+
     cached = SentenceTransformerEmbedder(
-        model_name, device=device, trust_remote_code=trust_remote_code
+        model_name,
+        device=device,
+        trust_remote_code=trust_remote_code,
+        dtype=dtype,
     )
     get_embedder._cached = cached
     return cached
@@ -96,15 +102,62 @@ class SentenceTransformerEmbedder(Embedder):
         model_name: str = DEFAULT_MODEL,
         device: str | None = None,
         trust_remote_code: bool = True,
+        dtype: str | None = None,
     ) -> None:
+        import logging
+        import torch
         from sentence_transformers import SentenceTransformer
 
+        _log = logging.getLogger(__name__)
         resolved = device if device is not None else _resolve_device()
-        self._model = SentenceTransformer(
-            model_name,
-            device=resolved,
-            trust_remote_code=trust_remote_code,
-        )
+        model_kwargs: dict[str, object] = {}
+        _dtype = dtype  # resolved by caller from config.yaml
+
+        if _dtype is None or _dtype == "auto":
+            if resolved.startswith("cuda") and torch.cuda.is_available():
+                # Resolve device index for get_device_capability
+                # "cuda:0" → 0, "cuda" → None (current device)
+                dev_idx: int | None = (
+                    int(resolved.split(":", 1)[1]) if ":" in resolved else None
+                )
+                cap = torch.cuda.get_device_capability(dev_idx)
+                if cap is not None and cap[0] >= 8:  # Ampere+
+                    model_kwargs["torch_dtype"] = torch.bfloat16
+            # CPU bf16 is opt-in via dtype="bf16" in config.yaml — skip auto on CPU
+            # because older CPUs emulate bf16 in software (slower than fp32)
+        elif _dtype == "bf16":
+            model_kwargs["torch_dtype"] = torch.bfloat16
+        # else _dtype == "fp32" or "auto" on pre-Ampere → fp32 default (no kwarg)
+
+        # Flash Attention 2 — gated on importability
+        try:
+            import flash_attn  # noqa: F401
+            model_kwargs["attn_implementation"] = "flash_attention_2"
+        except ImportError:
+            pass
+
+        try:
+            self._model = SentenceTransformer(
+                model_name,
+                device=resolved,
+                trust_remote_code=trust_remote_code,
+                model_kwargs=model_kwargs,
+            )
+        except Exception as exc:
+            if "attn_implementation" in model_kwargs:
+                _log.debug(
+                    "SentenceTransformer load failed with FA2 (%.200s) — retrying without attn_implementation",
+                    exc,
+                )
+                del model_kwargs["attn_implementation"]
+                self._model = SentenceTransformer(
+                    model_name,
+                    device=resolved,
+                    trust_remote_code=trust_remote_code,
+                    model_kwargs=model_kwargs,
+                )
+            else:
+                raise
         # Monkey-patch for LiquidAI/LFM2.5-Embedding-350M compatibility.
         # transformers v5.12+ passes ``seq_idx`` as a kwarg to decoder-layer
         # forward methods.  The custom model's ``_noncausal_shortconv_forward``
@@ -147,6 +200,7 @@ class SentenceTransformerEmbedder(Embedder):
             _lfm2_mod.Lfm2ShortConv.slow_forward = _patched_slow_forward
         self.model_name = model_name
         self._device = resolved
+        self._dtype = dtype
         self.dim = self._model.get_sentence_embedding_dimension()
 
     def embed(self, texts: list[str]) -> np.ndarray:

@@ -7,6 +7,7 @@ from pathlib import Path
 from knowledge.config import (
     DEFAULT_MODEL,
     Config,
+    EmbedConfig,
     ensure_data_dir,
     load_config,
     resolve_data_dir,
@@ -24,6 +25,26 @@ def test_config_defaults() -> None:
     assert c.fetch.git_timeout == 300
     assert c.search.default_top_k == 10
     assert ".md" in c.index.doc_extensions
+
+
+def test_parse_embed_dtype_auto() -> None:
+    cfg = Config(embed=EmbedConfig(dtype="auto"))
+    assert cfg.embed.dtype == "auto"
+
+
+def test_parse_embed_dtype_bf16() -> None:
+    cfg = Config(embed=EmbedConfig(dtype="bf16"))
+    assert cfg.embed.dtype == "bf16"
+
+
+def test_parse_embed_dtype_fp32() -> None:
+    cfg = Config(embed=EmbedConfig(dtype="fp32"))
+    assert cfg.embed.dtype == "fp32"
+
+
+def test_parse_embed_dtype_none_falls_back() -> None:
+    cfg = Config()
+    assert cfg.embed.dtype is None
 
 
 def test_load_config_null_model_in_yaml(tmp_path: Path) -> None:
