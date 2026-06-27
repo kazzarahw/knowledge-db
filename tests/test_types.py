@@ -10,13 +10,13 @@ import pytest
 @pytest.mark.parametrize(
     "module_name,qualname,should_pass_before",
     [
-        ("knowledge.chunk", "_convert_notebook", False),
+        ("knowledge.chunk", "_convert_notebook", True),
         ("knowledge.chunk", "_scan_headings", True),  # already annotated — confirm
-        ("knowledge.cli", "_build_parser", False),
-        ("knowledge.indexer", "_source_signature", False),
-        ("knowledge.indexer", "_walk_files", False),
-        ("knowledge.indexer", "_index_source", False),
-        ("knowledge.fetch", "_fetch_git_source", False),
+        ("knowledge.cli", "_build_parser", True),
+        ("knowledge.indexer", "_source_signature", True),
+        ("knowledge.indexer", "_walk_files", True),
+        ("knowledge.indexer", "_index_source", True),
+        ("knowledge.fetch", "_fetch_git_source", True),
         ("knowledge.fetch", "_clone", False),
         ("knowledge.fetch", "_pull", False),
     ],
@@ -48,13 +48,13 @@ def test_search_result_is_typeddict() -> None:
 
     hints = typing.get_type_hints(cmd_search)
     ret = hints.get("return")
+    if ret is None:
+        pytest.fail("cmd_search must have a return annotation")
     # Should be list[SearchResult] where SearchResult is a TypedDict
     assert hasattr(ret, "__origin__"), f"return type must be generic, got {ret}"
     assert ret.__origin__ is list, f"must be list[...], got {ret.__origin__}"
     elem = ret.__args__[0]
-    assert hasattr(elem, "__annotations__"), (
-        f"element type {elem} is not a TypedDict"
-    )
+    assert hasattr(elem, "__annotations__"), f"element type {elem} is not a TypedDict"
 
 
 @pytest.mark.parametrize(
