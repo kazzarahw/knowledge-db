@@ -56,30 +56,27 @@ class Config:
     search: SearchConfig = field(default_factory=SearchConfig)
 
 
+def _parse_field[T](d: dict[str, object], key: str, typ: type[T], default: T) -> T:
+    """Get a typed field from a dict, falling back to default if missing or wrong type."""
+    val = d.get(key, default)
+    return val if isinstance(val, typ) else default
+
+
 def _parse_embed(raw: object) -> EmbedConfig:
     """Parse embed section from raw YAML dict into EmbedConfig."""
     if not isinstance(raw, dict):
         return EmbedConfig()
-    model = raw.get("model", DEFAULT_MODEL)
-    if not isinstance(model, str):
-        model = DEFAULT_MODEL
-    device = raw.get("device")
-    if not isinstance(device, str):
-        device = None
-    batch_size = raw.get("batch_size", 32)
-    if not isinstance(batch_size, int):
-        batch_size = 32
-    trust_remote_code = raw.get("trust_remote_code", True)
-    if not isinstance(trust_remote_code, bool):
-        trust_remote_code = True
-    dtype = raw.get("dtype")
+    dtype: str | None = raw.get("dtype")
     if not isinstance(dtype, str) or dtype not in ("auto", "bf16", "fp32"):
         dtype = None
+    device: str | None = raw.get("device")
+    if not isinstance(device, str):
+        device = None
     return EmbedConfig(
-        model=model,
+        model=_parse_field(raw, "model", str, DEFAULT_MODEL),
         device=device,
-        batch_size=batch_size,
-        trust_remote_code=trust_remote_code,
+        batch_size=_parse_field(raw, "batch_size", int, 32),
+        trust_remote_code=_parse_field(raw, "trust_remote_code", bool, True),
         dtype=dtype,
     )
 
@@ -88,10 +85,7 @@ def _parse_fetch(raw: object) -> FetchConfig:
     """Parse fetch section from raw YAML dict into FetchConfig."""
     if not isinstance(raw, dict):
         return FetchConfig()
-    git_timeout = raw.get("git_timeout", 300)
-    if not isinstance(git_timeout, int):
-        git_timeout = 300
-    return FetchConfig(git_timeout=git_timeout)
+    return FetchConfig(git_timeout=_parse_field(raw, "git_timeout", int, 300))
 
 
 def _parse_index(raw: object) -> IndexConfig:
@@ -110,10 +104,7 @@ def _parse_search(raw: object) -> SearchConfig:
     """Parse search section from raw YAML dict into SearchConfig."""
     if not isinstance(raw, dict):
         return SearchConfig()
-    default_top_k = raw.get("default_top_k", 10)
-    if not isinstance(default_top_k, int):
-        default_top_k = 10
-    return SearchConfig(default_top_k=default_top_k)
+    return SearchConfig(default_top_k=_parse_field(raw, "default_top_k", int, 10))
 
 
 def load_config(config_dir: str | Path | None = None) -> Config:
@@ -151,11 +142,13 @@ def load_config(config_dir: str | Path | None = None) -> Config:
 
 
 def resolve_data_dir(override: str | None = None) -> Path:
-    """Resolve data directory with priority:
-    1. --config PATH override
-    2. $KNOWLEDGE_DB_DIR env var
-    3. $XDG_DATA_HOME/knowledge-db/
-    4. ./data/ if pyproject.toml is a sibling
+    """Resolve the data directory path with priority-based fallback.
+
+    Args:
+        override: Optional explicit path. Takes highest priority.
+
+    Returns:
+        Resolved data directory Path.
     """
     if override:
         return Path(override)

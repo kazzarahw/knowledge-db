@@ -6,9 +6,66 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
+from knowledge.config import load_config
 from knowledge.sources import Source
+
+
+@dataclass(frozen=True, slots=True)
+class _GitResult:
+    """Result of a git subprocess execution."""
+
+    stdout: str
+    stderr: str
+    returncode: int
+
+
+def _git_run(cmd: list[str], timeout: int) -> _GitResult | None:
+    """Run a subprocess command. Returns None on timeout.
+
+    Note: callers use ``git -C <path>`` in the command list so no
+    separate cwd parameter is needed.
+    """
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return _GitResult(r.stdout, r.stderr, r.returncode)
+    except subprocess.TimeoutExpired:
+        return None
+
+
+def _handle_lfs(repo_dir: str | Path, source_name: str, git_timeout: int) -> None:
+    """Pull LFS objects if the repo uses Git LFS. Prints warnings on failure.
+
+    LFS failures are non-fatal -- placeholder text may appear in indexed
+    content but does not prevent the source from being usable.
+    """
+    lfs_check = _git_run(
+        ["git", "-C", str(repo_dir), "lfs", "track"],
+        git_timeout,
+    )
+    if lfs_check is not None and lfs_check.returncode == 0 and lfs_check.stdout.strip():
+        if shutil.which("git-lfs"):
+            lfs_result = _git_run(
+                ["git", "-C", str(repo_dir), "lfs", "pull"],
+                git_timeout,
+            )
+            if lfs_result is None:
+                print(
+                    f"  Warning: LFS pull timed out for {source_name}",
+                    file=sys.stderr,
+                )
+            elif lfs_result.returncode != 0:
+                print(
+                    f"  Warning: LFS pull failed for {source_name}",
+                    file=sys.stderr,
+                )
+        else:
+            print(
+                f"  Warning: {source_name} uses Git LFS but git-lfs is not installed",
+                file=sys.stderr,
+            )
 
 
 def fetch_sources(
@@ -18,9 +75,18 @@ def fetch_sources(
     verbose: bool = False,
     config_dir: str | None = None,
 ) -> list[str]:
-    """Clone/pull all (or one) sources. Returns list of changed source names."""
-    from knowledge.config import load_config
+    """Clone/pull all (or one) configured git sources.
 
+    Args:
+        sources: List of configured sources.
+        data_dir: Root data directory containing sources/ subdir.
+        only: If set, only process the source with this name.
+        verbose: Print per-source progress to stdout.
+        config_dir: Config directory for git timeout settings.
+
+    Returns:
+        List of source names whose HEAD changed during fetch.
+    """
     cfg = load_config(config_dir)
     git_timeout = cfg.fetch.git_timeout
 
@@ -65,11 +131,8 @@ def _clone(source: Source, dest: Path, verbose: bool, git_timeout: int) -> bool:
         if verbose:
             print(f"  Cloning {source.name} from {repo_url}")
 
-        try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=git_timeout
-            )
-        except subprocess.TimeoutExpired:
+        result = _git_run(cmd, git_timeout)
+        if result is None:
             print(
                 f"  Error: {source.name} clone timed out after {git_timeout}s",
                 file=sys.stderr,
@@ -83,14 +146,11 @@ def _clone(source: Source, dest: Path, verbose: bool, git_timeout: int) -> bool:
             return False
 
         if source.sparse:
-            try:
-                sparse_result = subprocess.run(
-                    ["git", "-C", tmpdir, "sparse-checkout", "set", *source.sparse],
-                    capture_output=True,
-                    text=True,
-                    timeout=git_timeout,
-                )
-            except subprocess.TimeoutExpired:
+            sparse_result = _git_run(
+                ["git", "-C", tmpdir, "sparse-checkout", "set", *source.sparse],
+                git_timeout,
+            )
+            if sparse_result is None:
                 print(
                     f"  Error: {source.name} sparse-checkout timed out after {git_timeout}s",
                     file=sys.stderr,
@@ -103,37 +163,7 @@ def _clone(source: Source, dest: Path, verbose: bool, git_timeout: int) -> bool:
                 )
                 return False
 
-        lfs_check = subprocess.run(
-            ["git", "-C", tmpdir, "lfs", "track"],
-            capture_output=True,
-            text=True,
-            timeout=git_timeout,
-        )
-        if lfs_check.returncode == 0 and lfs_check.stdout.strip():
-            if shutil.which("git-lfs"):
-                try:
-                    lfs_result = subprocess.run(
-                        ["git", "-C", tmpdir, "lfs", "pull"],
-                        capture_output=True,
-                        timeout=git_timeout,
-                    )
-                except subprocess.TimeoutExpired:
-                    print(
-                        f"  Error: {source.name} LFS pull timed out after {git_timeout}s",
-                        file=sys.stderr,
-                    )
-                    return False
-                if lfs_result.returncode != 0:
-                    print(
-                        f"  Error pulling LFS for {source.name}: {lfs_result.stderr.strip()}",
-                        file=sys.stderr,
-                    )
-                    return False
-            else:
-                print(
-                    f"  Warning: {source.name} uses Git LFS but git-lfs is not installed",
-                    file=sys.stderr,
-                )
+        _handle_lfs(tmpdir, source.name, git_timeout)
 
         shutil.move(tmpdir, str(dest))
 
@@ -146,14 +176,11 @@ def _pull(source: Source, dest: Path, verbose: bool, git_timeout: int) -> bool:
         print(f"  Pulling {source.name}")
 
     if source.branch:
-        try:
-            checkout_result = subprocess.run(
-                ["git", "-C", str(dest), "checkout", source.branch],
-                capture_output=True,
-                text=True,
-                timeout=git_timeout,
-            )
-        except subprocess.TimeoutExpired:
+        checkout_result = _git_run(
+            ["git", "-C", str(dest), "checkout", source.branch],
+            git_timeout,
+        )
+        if checkout_result is None:
             print(
                 f"  Error: {source.name} checkout timed out after {git_timeout}s",
                 file=sys.stderr,
@@ -171,14 +198,11 @@ def _pull(source: Source, dest: Path, verbose: bool, git_timeout: int) -> bool:
         print(f"  Error reading HEAD for {source.name}", file=sys.stderr)
         return False
 
-    try:
-        status = subprocess.run(
-            ["git", "-C", str(dest), "status", "--porcelain"],
-            capture_output=True,
-            text=True,
-            timeout=git_timeout,
-        )
-    except subprocess.TimeoutExpired:
+    status = _git_run(
+        ["git", "-C", str(dest), "status", "--porcelain"],
+        git_timeout,
+    )
+    if status is None:
         print(
             f"  Error: {source.name} status timed out after {git_timeout}s",
             file=sys.stderr,
@@ -187,28 +211,16 @@ def _pull(source: Source, dest: Path, verbose: bool, git_timeout: int) -> bool:
     if status.stdout.strip() and verbose:
         print(f"  {source.name} has uncommitted changes — reindexing anyway")
 
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(dest), "pull", "--ff-only"],
-            capture_output=True,
-            text=True,
-            timeout=git_timeout,
-        )
-    except subprocess.TimeoutExpired:
+    result = _git_run(["git", "-C", str(dest), "pull", "--ff-only"], git_timeout)
+    if result is None:
         print(
             f"  Error: {source.name} pull timed out after {git_timeout}s",
             file=sys.stderr,
         )
         return False
     if result.returncode != 0:
-        try:
-            fsck = subprocess.run(
-                ["git", "-C", str(dest), "fsck"],
-                capture_output=True,
-                text=True,
-                timeout=git_timeout,
-            )
-        except subprocess.TimeoutExpired:
+        fsck = _git_run(["git", "-C", str(dest), "fsck"], git_timeout)
+        if fsck is None:
             print(
                 f"  Error: {source.name} fsck timed out after {git_timeout}s",
                 file=sys.stderr,
@@ -230,38 +242,7 @@ def _pull(source: Source, dest: Path, verbose: bool, git_timeout: int) -> bool:
     if after is None:
         return False
 
-    # Detect and pull LFS objects
-    try:
-        lfs_check = subprocess.run(
-            ["git", "-C", str(dest), "lfs", "track"],
-            capture_output=True,
-            text=True,
-            timeout=git_timeout,
-        )
-    except subprocess.TimeoutExpired:
-        print(
-            f"  Warning: LFS track check timed out for {source.name}", file=sys.stderr
-        )
-        lfs_check = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr=""
-        )
-    if lfs_check.returncode == 0 and lfs_check.stdout.strip():
-        if shutil.which("git-lfs"):
-            try:
-                lfs_result = subprocess.run(
-                    ["git", "-C", str(dest), "lfs", "pull"],
-                    capture_output=True,
-                    timeout=git_timeout,
-                )
-            except subprocess.TimeoutExpired:
-                print(
-                    f"  Warning: LFS pull timed out for {source.name}", file=sys.stderr
-                )
-                lfs_result = subprocess.CompletedProcess(
-                    args=[], returncode=1, stdout="", stderr=""
-                )
-            if lfs_result.returncode != 0:
-                print(f"  Warning: LFS pull failed for {source.name}", file=sys.stderr)
+    _handle_lfs(dest, source.name, git_timeout)
 
     return before != after
 
@@ -269,14 +250,12 @@ def _pull(source: Source, dest: Path, verbose: bool, git_timeout: int) -> bool:
 def get_git_head(source_dir: Path, git_timeout: int = 300) -> str | None:
     """Get current git HEAD for a source directory. Returns None if not a git repo."""
     try:
-        result = subprocess.run(
+        r = _git_run(
             ["git", "-C", str(source_dir), "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=git_timeout,
+            git_timeout,
         )
-        if result.returncode == 0:
-            return result.stdout.strip()
+        if r is not None and r.returncode == 0:
+            return r.stdout.strip()
     except FileNotFoundError:
         pass
     return None

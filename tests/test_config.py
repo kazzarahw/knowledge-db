@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from knowledge.config import (
     DEFAULT_MODEL,
     Config,
@@ -203,3 +205,27 @@ def test_ensure_data_dir_idempotent(tmp_path: Path) -> None:
     """Calling twice does not error."""
     ensure_data_dir(tmp_path)
     ensure_data_dir(tmp_path)  # second call should not raise
+
+
+@pytest.mark.parametrize(
+    "d,key,typ,default,expected",
+    [
+        ({"x": "a"}, "x", str, "b", "a"),  # present, correct type
+        ({"x": 1}, "x", str, "b", "b"),  # present, wrong type
+        ({}, "x", str, "b", "b"),  # missing key
+        ({"x": None}, "x", str, "b", "b"),  # None value (not str)
+        (
+            {"x": True},
+            "x",
+            int,
+            0,
+            True,
+        ),  # bool is int subclass — passes isinstance check
+        ({"x": 5}, "x", int, 0, 5),  # present, correct int
+        ({"x": "hello"}, "x", str, "", "hello"),  # present, correct str
+    ],
+)
+def test_parse_field(d, key, typ, default, expected) -> None:
+    from knowledge.config import _parse_field
+
+    assert _parse_field(d, key, typ, default) == expected
