@@ -19,7 +19,7 @@ from knowledge.config import (
     resolve_sources_yaml,
 )
 from knowledge.db import get_connection, ensure_schema
-from knowledge.fetch import fetch_sources, get_git_head
+from knowledge.fetch import get_git_head
 from knowledge.sources import Source, load_sources
 
 

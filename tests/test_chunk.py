@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from knowledge.chunk import Section, chunk_file, chunk_text
+from knowledge.chunk import chunk_file, chunk_text
 
 BASIC_MD = """# Intro
 Welcome to the docs.

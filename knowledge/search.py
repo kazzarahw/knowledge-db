@@ -6,7 +6,6 @@ import re
 import sqlite3
 import sys
 from enum import StrEnum
-from pathlib import Path
 from typing import TypedDict
 
 from knowledge.config import resolve_data_dir
