@@ -138,18 +138,20 @@ def _select_fts_table(tier: QueryTier) -> str:
     return "sections_fts"
 
 
-def _bm25_order(tier: QueryTier) -> str:
-    """Return the ORDER BY clause with appropriate BM25 weights.
+def _bm25_order(tier: QueryTier) -> tuple[str, str]:
+    """Return (select_expr, order_expr) with consistent column-weighted BM25.
 
     Args:
         tier: Classified query tier.
 
     Returns:
-        SQL fragment for ordering.
+        (select_expr, order_expr) SQL fragments using the same bm25() call.
     """
     if tier == QueryTier.EXACT:
-        return "bm25(sections_fts_title, 5.0, 3.0)"
-    return "bm25(sections_fts, 5.0, 3.0, 1.0)"
+        bm25 = "bm25(sections_fts_title, 5.0, 3.0)"
+    else:
+        bm25 = "bm25(sections_fts, 5.0, 3.0, 1.0)"
+    return (bm25, bm25)
 
 
 def cmd_search(
@@ -219,7 +221,7 @@ def cmd_search(
         if not fts_query:
             print("Error: empty search query after processing", file=sys.stderr)
             return []
-        bm25_clause = _bm25_order(tier)
+        bm25_select, bm25_order = _bm25_order(tier)
 
         source_filter = ""
         source_params: list[str] = []
@@ -229,12 +231,12 @@ def cmd_search(
 
         sql = f"""
             SELECT s.source, s.title, s.category, s.path,
-                   s.heading_path, s.body, rank
+                   s.heading_path, s.body, {bm25_select} as rank
             FROM {fts_table} f
             JOIN sections s ON s.id = f.rowid
             WHERE {fts_table} MATCH ?
               {source_filter}
-            ORDER BY {bm25_clause}
+            ORDER BY {bm25_order}
             LIMIT ?
         """
         try:
