@@ -137,7 +137,7 @@ def _select_fts_table(tier: QueryTier) -> str:
     return "sections_fts"
 
 
-def _bm25_order(tier: QueryTier) -> tuple[str, str]:
+def _get_bm25_order(tier: QueryTier) -> tuple[str, str]:
     """Return (select_expr, order_expr) with consistent column-weighted BM25.
 
     Args:
@@ -220,7 +220,7 @@ def cmd_search(
         if not fts_query:
             print("Error: empty search query after processing", file=sys.stderr)
             return []
-        bm25_select, bm25_order = _bm25_order(tier)
+        bm25_select, bm25_order = _get_bm25_order(tier)
 
         source_filter = ""
         source_params: list[str] = []
