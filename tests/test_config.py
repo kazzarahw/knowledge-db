@@ -7,9 +7,7 @@ from pathlib import Path
 import pytest
 
 from knowledge.config import (
-    DEFAULT_MODEL,
     Config,
-    EmbedConfig,
     ensure_data_dir,
     load_config,
     resolve_data_dir,
@@ -20,43 +18,9 @@ from knowledge.config import (
 def test_config_defaults() -> None:
     """Config() with no args uses all defaults."""
     c = Config()
-    assert c.embed.model == DEFAULT_MODEL
-    assert c.embed.device is None
-    assert c.embed.batch_size == 32
-    assert c.embed.trust_remote_code is True
     assert c.fetch.git_timeout == 300
     assert c.search.default_top_k == 10
     assert ".md" in c.index.doc_extensions
-
-
-def test_parse_embed_dtype_auto() -> None:
-    cfg = Config(embed=EmbedConfig(dtype="auto"))
-    assert cfg.embed.dtype == "auto"
-
-
-def test_parse_embed_dtype_bf16() -> None:
-    cfg = Config(embed=EmbedConfig(dtype="bf16"))
-    assert cfg.embed.dtype == "bf16"
-
-
-def test_parse_embed_dtype_fp32() -> None:
-    cfg = Config(embed=EmbedConfig(dtype="fp32"))
-    assert cfg.embed.dtype == "fp32"
-
-
-def test_parse_embed_dtype_none_falls_back() -> None:
-    cfg = Config()
-    assert cfg.embed.dtype is None
-
-
-def test_load_config_null_model_in_yaml(tmp_path: Path) -> None:
-    """model: null in YAML must fall back to DEFAULT_MODEL, not produce 'None' string."""
-    cfg = tmp_path / "config.yaml"
-    cfg.write_text("embed:\n  model: null\n")
-    result = load_config(tmp_path)
-    assert result.embed.model == DEFAULT_MODEL
-    assert result.embed.model is not None
-    assert "None" not in result.embed.model
 
 
 def test_resolve_sources_yaml_docstring_has_sections() -> None:
@@ -75,54 +39,21 @@ def test_resolve_sources_yaml_docstring_has_sections() -> None:
 def test_load_config_missing_file(tmp_path: Path) -> None:
     """Missing config file returns defaults."""
     result = load_config(tmp_path / "nonexistent")
-    assert result.embed.model == DEFAULT_MODEL
-    assert result.embed.device is None
+    assert result.fetch.git_timeout == 300
 
 
 def test_load_config_empty_file(tmp_path: Path) -> None:
     """Empty config file returns defaults."""
     (tmp_path / "config.yaml").write_text("")
     result = load_config(tmp_path)
-    assert result.embed.model == DEFAULT_MODEL
-    assert result.embed.device is None
+    assert result.fetch.git_timeout == 300
 
 
 def test_load_config_not_a_dict(tmp_path: Path) -> None:
     """config.yaml with non-dict root returns defaults."""
     (tmp_path / "config.yaml").write_text("just a string")
     result = load_config(tmp_path)
-    assert result.embed.model == DEFAULT_MODEL
-
-
-def test_load_config_embed_not_a_dict(tmp_path: Path) -> None:
-    """embed: with non-dict value returns defaults."""
-    (tmp_path / "config.yaml").write_text("embed: just a string")
-    result = load_config(tmp_path)
-    assert result.embed.model == DEFAULT_MODEL
-
-
-def test_load_config_custom_model_and_device(tmp_path: Path) -> None:
-    """Valid config values are returned correctly."""
-    (tmp_path / "config.yaml").write_text(
-        "embed:\n  model: custom/model\n  device: cpu\n"
-    )
-    result = load_config(tmp_path)
-    assert result.embed.model == "custom/model"
-    assert result.embed.device == "cpu"
-
-
-def test_load_config_device_null(tmp_path: Path) -> None:
-    """device: null should return device as None, not 'None'."""
-    (tmp_path / "config.yaml").write_text("embed:\n  model: my/model\n  device:\n")
-    result = load_config(tmp_path)
-    assert result.embed.device is None
-
-
-def test_load_config_batch_size(tmp_path: Path) -> None:
-    """embed.batch_size is parsed from config."""
-    (tmp_path / "config.yaml").write_text("embed:\n  batch_size: 64\n")
-    result = load_config(tmp_path)
-    assert result.embed.batch_size == 64
+    assert result.fetch.git_timeout == 300
 
 
 def test_load_config_git_timeout(tmp_path: Path) -> None:
@@ -146,13 +77,6 @@ def test_load_config_doc_extensions(tmp_path: Path) -> None:
     )
     result = load_config(tmp_path)
     assert result.index.doc_extensions == (".md", ".txt")
-
-
-def test_load_config_trust_remote_code(tmp_path: Path) -> None:
-    """embed.trust_remote_code is parsed from config."""
-    (tmp_path / "config.yaml").write_text("embed:\n  trust_remote_code: false\n")
-    result = load_config(tmp_path)
-    assert result.embed.trust_remote_code is False
 
 
 # ── resolve_data_dir tests ─────────────────────────────────────────────────────

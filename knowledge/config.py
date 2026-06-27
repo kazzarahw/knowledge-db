@@ -10,16 +10,6 @@ from pathlib import Path
 VERSION = "0.1.0"
 APP_NAME = "knowledge-db"
 DATA_DIR_ENV_VAR = "KNOWLEDGE_DB_DIR"
-DEFAULT_MODEL = "LiquidAI/LFM2.5-Embedding-350M"
-
-
-@dataclass(frozen=True, slots=True)
-class EmbedConfig:
-    model: str = DEFAULT_MODEL
-    device: str | None = None
-    batch_size: int = 32
-    trust_remote_code: bool = True
-    dtype: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,7 +40,6 @@ class SearchConfig:
 
 @dataclass(frozen=True, slots=True)
 class Config:
-    embed: EmbedConfig = field(default_factory=EmbedConfig)
     fetch: FetchConfig = field(default_factory=FetchConfig)
     index: IndexConfig = field(default_factory=IndexConfig)
     search: SearchConfig = field(default_factory=SearchConfig)
@@ -60,25 +49,6 @@ def _parse_field[T](d: dict[str, object], key: str, typ: type[T], default: T) ->
     """Get a typed field from a dict, falling back to default if missing or wrong type."""
     val = d.get(key, default)
     return val if isinstance(val, typ) else default
-
-
-def _parse_embed(raw: object) -> EmbedConfig:
-    """Parse embed section from raw YAML dict into EmbedConfig."""
-    if not isinstance(raw, dict):
-        return EmbedConfig()
-    dtype: str | None = raw.get("dtype")
-    if not isinstance(dtype, str) or dtype not in ("auto", "bf16", "fp32"):
-        dtype = None
-    device: str | None = raw.get("device")
-    if not isinstance(device, str):
-        device = None
-    return EmbedConfig(
-        model=_parse_field(raw, "model", str, DEFAULT_MODEL),
-        device=device,
-        batch_size=_parse_field(raw, "batch_size", int, 32),
-        trust_remote_code=_parse_field(raw, "trust_remote_code", bool, True),
-        dtype=dtype,
-    )
 
 
 def _parse_fetch(raw: object) -> FetchConfig:
@@ -132,7 +102,6 @@ def load_config(config_dir: str | Path | None = None) -> Config:
         if not isinstance(raw, dict):
             return Config()
         return Config(
-            embed=_parse_embed(raw.get("embed")),
             fetch=_parse_fetch(raw.get("fetch")),
             index=_parse_index(raw.get("index")),
             search=_parse_search(raw.get("search")),
