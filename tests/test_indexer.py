@@ -5,12 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 from knowledge.chunk import Section
 
 
-def test_index_source_sorts_sections_by_length(tmp_path: Path) -> None:
-    """Sections should be sorted by body length before embedding."""
+def test_index_source_inserts_sections(tmp_path: Path) -> None:
+    """_index_source inserts sections and FTS5 entries."""
+    from knowledge.db import get_connection, ensure_schema
     from knowledge.indexer import _index_source
     from knowledge.sources import Source
 
@@ -21,47 +21,11 @@ def test_index_source_sorts_sections_by_length(tmp_path: Path) -> None:
         category="docs",
         title="Test",
     )
-    embedder = MagicMock()
-    embedder.embed.return_value = np.zeros((4, 384), dtype=np.float32)
-    conn = MagicMock()
+    conn = get_connection(tmp_path / "test.db")
+    ensure_schema(conn)
 
     data_dir = tmp_path
     (data_dir / "sources" / "test").mkdir(parents=True)
-
-    sections = [
-        Section(
-            source="test",
-            title="long",
-            category="docs",
-            path="a.md",
-            heading_path="",
-            body="x" * 1000,
-        ),
-        Section(
-            source="test",
-            title="short",
-            category="docs",
-            path="a.md",
-            heading_path="",
-            body="x" * 10,
-        ),
-        Section(
-            source="test",
-            title="medium",
-            category="docs",
-            path="a.md",
-            heading_path="",
-            body="x" * 100,
-        ),
-        Section(
-            source="test",
-            title="tiny",
-            category="docs",
-            path="a.md",
-            heading_path="",
-            body="x",
-        ),
-    ]
 
     with (
         patch(
@@ -71,13 +35,34 @@ def test_index_source_sorts_sections_by_length(tmp_path: Path) -> None:
         patch("knowledge.indexer.chunk_file") as mock_chunk,
         patch("knowledge.indexer.load_config") as mock_cfg,
     ):
+        sections = [
+            Section(
+                source="test",
+                title="Heading",
+                category="docs",
+                path="a.md",
+                heading_path="",
+                body="Body text.",
+            ),
+        ]
         mock_chunk.side_effect = lambda fpath, src, cat, rel_path: sections
-        mock_cfg.return_value = MagicMock(embed=MagicMock(batch_size=32))
+        mock_cfg.return_value = MagicMock()
 
-        _index_source(source, embedder, conn, data_dir, verbose=False)
-        called_texts = embedder.embed.call_args[0][0]
-        assert len(called_texts) == 4
-        assert called_texts[0] == "x"  # shortest
-        assert called_texts[1] == "x" * 10
-        assert called_texts[2] == "x" * 100
-        assert called_texts[3] == "x" * 1000  # longest
+        count = _index_source(source, conn, tmp_path, verbose=False)
+
+        assert count == 1
+        # Verify sections were inserted
+        rows = conn.execute("SELECT title, body FROM sections ORDER BY id").fetchall()
+        assert len(rows) == 1
+        assert rows[0]["title"] == "Heading"
+        assert rows[0]["body"] == "Body text."
+
+        # Verify FTS5 index was populated
+        fts_rows = conn.execute("SELECT count(*) FROM sections_fts").fetchone()[0]
+        assert fts_rows == 1
+
+        fts_title_rows = conn.execute(
+            "SELECT count(*) FROM sections_fts_title"
+        ).fetchone()[0]
+        assert fts_title_rows == 1
+    conn.close()

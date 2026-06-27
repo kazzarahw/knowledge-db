@@ -1,4 +1,4 @@
-"""Index pipeline orchestrator: chunk -> embed -> store."""
+"""Index pipeline orchestrator: chunk -> store (FTS5)."""
 
 from __future__ import annotations
 
@@ -10,8 +10,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import FrameType
 
-import numpy as np
-
 from knowledge.chunk import Section, chunk_file
 from knowledge.config import (
     Config,
@@ -21,12 +19,12 @@ from knowledge.config import (
     resolve_sources_yaml,
 )
 from knowledge.db import get_connection, ensure_schema
-from knowledge.embed import SentenceTransformerEmbedder, get_embedder
 from knowledge.fetch import fetch_sources, get_git_head
 from knowledge.sources import Source, load_sources
 
 
 def _source_signature(source_dir: Path) -> str | None:
+    """Compute a content-based hash for local source change detection."""
     if not source_dir.exists():
         return None
     h = hashlib.sha256()
@@ -45,6 +43,7 @@ def _source_signature(source_dir: Path) -> str | None:
 def _walk_files(
     source_dir: Path, source: Source, cfg: Config | None = None
 ) -> list[Path]:
+    """Walk source directory for indexable files matching doc_extensions."""
     if cfg is None:
         cfg = load_config()
 
@@ -68,15 +67,93 @@ def _walk_files(
     return sorted(files)
 
 
+def _fts5_sync_sections(
+    conn: sqlite3.Connection,
+    source_name: str,
+    sections: list[Section],
+) -> None:
+    """Insert sections and sync FTS5 indexes within an active transaction.
+
+    Phase 1: Delete old FTS5 entries for this source (must precede section delete).
+    Phase 2: Delete old sections for this source.
+    Phase 3: Insert new sections.
+    Phase 4: Insert into FTS5 tables with matching rowids.
+
+    Args:
+        conn: Open database connection (in transaction).
+        source_name: Source name to re-index.
+        sections: List of Section dataclass instances to insert.
+    """
+    conn.execute(
+        "DELETE FROM sections_fts WHERE rowid IN "
+        "(SELECT id FROM sections WHERE source = ?)",
+        (source_name,),
+    )
+    conn.execute(
+        "DELETE FROM sections_fts_title WHERE rowid IN "
+        "(SELECT id FROM sections WHERE source = ?)",
+        (source_name,),
+    )
+
+    conn.execute("DELETE FROM sections WHERE source = ?", (source_name,))
+
+    if not sections:
+        return
+
+    section_tuples = [
+        (s.source, s.title, s.category, s.path, s.heading_path, s.body)
+        for s in sections
+    ]
+    conn.executemany(
+        "INSERT INTO sections (source, title, category, path, heading_path, body) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        section_tuples,
+    )
+
+    sec_ids = conn.execute(
+        "SELECT id FROM sections WHERE source = ? ORDER BY id",
+        (source_name,),
+    ).fetchall()
+
+    fts_tuples = [
+        (row_id[0], s.title, s.heading_path, s.body)
+        for row_id, s in zip(sec_ids, sections)
+    ]
+    conn.executemany(
+        "INSERT INTO sections_fts(rowid, title, heading_path, body) "
+        "VALUES (?, ?, ?, ?)",
+        fts_tuples,
+    )
+    fts_title_tuples = [
+        (row_id[0], s.title, s.heading_path) for row_id, s in zip(sec_ids, sections)
+    ]
+    conn.executemany(
+        "INSERT INTO sections_fts_title(rowid, title, heading_path) VALUES (?, ?, ?)",
+        fts_title_tuples,
+    )
+
+
 def _index_source(
     source: Source,
-    embedder: SentenceTransformerEmbedder,
     conn: sqlite3.Connection,
     data_dir: Path,
     verbose: bool,
     current_head: str | None = None,
     cfg: Config | None = None,
 ) -> int:
+    """Index a single source: walk, chunk, and store via FTS5.
+
+    Args:
+        source: Source configuration dataclass.
+        conn: Open database connection (caller manages transaction).
+        data_dir: Root data directory.
+        verbose: Print per-file progress.
+        current_head: Git HEAD or source signature for state tracking.
+        cfg: Application configuration.
+
+    Returns:
+        Number of sections indexed.
+    """
     if cfg is None:
         cfg = load_config()
 
@@ -100,57 +177,16 @@ def _index_source(
                 print(f"    Warning: error processing {fpath}: {e}")
             continue
 
+    _fts5_sync_sections(conn, source.name, all_sections)
+
     if not all_sections:
+        if current_head is not None:
+            conn.execute(
+                "INSERT OR REPLACE INTO source_state (name, git_head, indexed_at) "
+                "VALUES (?, ?, datetime('now'))",
+                (source.name, current_head),
+            )
         return 0
-
-    all_sections.sort(key=lambda s: len(s.body))
-    texts = [s.body for s in all_sections]
-    all_embeddings: list[np.ndarray] = []
-
-    batch_size = cfg.embed.batch_size
-    iterator = range(0, len(texts), batch_size)
-    try:
-        from tqdm import tqdm
-
-        iterator = tqdm(iterator, desc=f"  Embedding {source.name}", leave=False)
-    except ImportError:
-        pass
-
-    for batch_start in iterator:
-        batch_texts = texts[batch_start : batch_start + batch_size]
-        batch_embeddings = embedder.embed(batch_texts)
-        all_embeddings.append(batch_embeddings)
-
-    if not all_embeddings:
-        return 0
-    embedding_matrix = np.vstack(all_embeddings)
-
-    conn.execute("DELETE FROM sections WHERE source = ?", (source.name,))
-    conn.execute("DELETE FROM section_vectors WHERE source = ?", (source.name,))
-
-    section_rows = [
-        (s.source, s.title, s.category, s.path, s.heading_path, s.body)
-        for s in all_sections
-    ]
-    conn.executemany(
-        "INSERT INTO sections (source, title, category, path, heading_path, body) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        section_rows,
-    )
-
-    sec_ids = conn.execute(
-        "SELECT id FROM sections WHERE source = ? ORDER BY id",
-        (source.name,),
-    ).fetchall()
-
-    vec_rows = [
-        (sid[0], source.name, vec.tobytes())
-        for sid, vec in zip(sec_ids, embedding_matrix)
-    ]
-    conn.executemany(
-        "INSERT INTO section_vectors (section_id, source, embedding) VALUES (?, ?, ?)",
-        vec_rows,
-    )
 
     if current_head is None:
         current_head = (
@@ -167,64 +203,16 @@ def _index_source(
     return len(all_sections)
 
 
-def _check_embedding_dim(
-    conn: sqlite3.Connection, dim: int, force: bool
-) -> tuple[bool, str | None]:
-    """Check embedding dim against stored index. Returns (tables_exist, error_message_or_None)."""
-    tables_exist = (
-        conn.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sections'"
-        ).fetchone()[0]
-        > 0
-    )
-
-    if tables_exist and not force:
-        has_meta = conn.execute("SELECT COUNT(*) FROM index_meta").fetchone()[0] > 0
-        if not has_meta:
-            return (
-                tables_exist,
-                (
-                    "Warning: Index metadata missing -- index may be corrupt. "
-                    "Run 'kdb index --force' to rebuild."
-                ),
-            )
-        existing_dim = conn.execute(
-            "SELECT value FROM index_meta WHERE key = 'embedding_dim'"
-        ).fetchone()
-        if existing_dim:
-            try:
-                stored_dim = int(existing_dim[0])
-            except (ValueError, TypeError):
-                return (
-                    tables_exist,
-                    (
-                        "Warning: corrupt index metadata "
-                        f"(embedding_dim='{existing_dim[0]}'). "
-                        "Run 'kdb index --force' to rebuild."
-                    ),
-                )
-            if stored_dim != dim:
-                return (
-                    tables_exist,
-                    (
-                        f"Error: Model dimension ({dim}) differs from stored "
-                        f"index ({stored_dim}). "
-                        "Run 'kdb index --force' to rebuild."
-                    ),
-                )
-    return (tables_exist, None)
-
-
 def cmd_index(
     config_dir: str | None = None,
     force: bool = False,
     verbose: bool = False,
 ) -> None:
-    """Index all configured sources: chunk → embed → store.
+    """Index all configured sources: walk, chunk, store in FTS5.
 
-    Validates embedding dimension against stored index metadata.
     Supports ``--force`` for full rebuild and SIGINT for graceful interruption.
     Cleans up orphan entries for sources no longer configured.
+    Creates FTS5 tables unconditionally (idempotent CREATE IF NOT EXISTS).
 
     Args:
         config_dir: Override config directory path.
@@ -237,35 +225,32 @@ def cmd_index(
     db_path = data_dir / "index.db"
     conn = get_connection(db_path)
 
-    try:
-        embedder = get_embedder(config_dir=config_dir)
-    except Exception:
-        conn.close()
-        raise
-    dim = embedder.dim
-    model_name = embedder.model_name
-
-    tables_exist, err = _check_embedding_dim(conn, dim, force)
-    if err:
-        conn.close()
-        print(err)
-        sys.exit(1)
+    ensure_schema(conn)
 
     if force:
+        conn.executescript("DROP TABLE IF EXISTS sections_fts_title")
+        conn.executescript("DROP TABLE IF EXISTS sections_fts")
         conn.executescript("DROP TABLE IF EXISTS sections")
-        conn.executescript("DROP TABLE IF EXISTS section_vectors")
         conn.executescript("DROP TABLE IF EXISTS source_state")
         conn.executescript("DROP TABLE IF EXISTS index_meta")
-        ensure_schema(conn, dim)
+        ensure_schema(conn)
         conn.execute("VACUUM")
-    elif not tables_exist:
-        ensure_schema(conn, dim)
+    else:
+        tables_exist = (
+            conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sections'"
+            ).fetchone()[0]
+            > 0
+        )
+        if not tables_exist:
+            ensure_schema(conn)
 
     def _on_sigint(signum: int, frame: FrameType | None) -> None:
         print("\nInterrupted. Index is partial. Run 'kdb index' to resume.")
         try:
             conn.execute(
-                "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('index_status', 'interrupted')"
+                "INSERT OR REPLACE INTO index_meta (key, value) VALUES "
+                "('index_status', 'interrupted')"
             )
             conn.commit()
         except Exception:
@@ -309,7 +294,6 @@ def cmd_index(
             conn.execute("BEGIN")
             num_sections = _index_source(
                 source,
-                embedder,
                 conn,
                 data_dir,
                 verbose,
@@ -329,11 +313,17 @@ def cmd_index(
     if configured_names:
         placeholders = ",".join("?" * len(configured_names))
         conn.execute(
-            f"DELETE FROM sections WHERE source NOT IN ({placeholders})",
+            f"DELETE FROM sections_fts WHERE rowid IN "
+            f"(SELECT id FROM sections WHERE source NOT IN ({placeholders}))",
             configured_names,
         )
         conn.execute(
-            f"DELETE FROM section_vectors WHERE source NOT IN ({placeholders})",
+            f"DELETE FROM sections_fts_title WHERE rowid IN "
+            f"(SELECT id FROM sections WHERE source NOT IN ({placeholders}))",
+            configured_names,
+        )
+        conn.execute(
+            f"DELETE FROM sections WHERE source NOT IN ({placeholders})",
             configured_names,
         )
         conn.execute(
@@ -342,24 +332,18 @@ def cmd_index(
         )
 
     conn.execute(
-        "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('embedding_model', ?)",
-        (model_name,),
+        "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('indexed_at', ?)",
+        (datetime.now(timezone.utc).isoformat(),),
     )
-    conn.execute(
-        "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('embedding_dim', ?)",
-        (str(dim),),
-    )
-    if source_failures == 0:
-        conn.execute(
-            "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('indexed_at', ?)",
-            (datetime.now(timezone.utc).isoformat(),),
-        )
 
-    conn.commit()
-    conn.close()
-    if source_failures:
-        print(
-            f"Index complete with {source_failures} source(s) failed.", file=sys.stderr
-        )
-    else:
+    if source_failures == 0:
+        conn.commit()
+        conn.close()
         print("Index complete.")
+    else:
+        conn.commit()
+        conn.close()
+        print(
+            f"Index complete with {source_failures} source(s) failed.",
+            file=sys.stderr,
+        )
