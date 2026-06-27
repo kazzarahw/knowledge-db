@@ -18,8 +18,8 @@ class ConfigError(ValueError):
 _GIT_URL_RE = re.compile(r"^(https?://|git@|ssh://git@)[\w.:/@-]+(?:\.git)?/?$")
 
 
-def _validate_git_url(url: str) -> bool:
-    """Basic git URL validation."""
+def _is_valid_git_url(url: str) -> bool:
+    """Whether url matches _GIT_URL_RE pattern."""
     return bool(_GIT_URL_RE.match(url))
 
 
@@ -46,7 +46,7 @@ class Source:
         if self.source_type == "git":
             if not self.url:
                 raise ConfigError(f"Git source {self.name!r} must have a url")
-            if not _validate_git_url(self.url):
+            if not _is_valid_git_url(self.url):
                 raise ConfigError(f"Invalid git URL for {self.name!r}: {self.url!r}")
         if self.source_type == "local":
             if not self.path:
