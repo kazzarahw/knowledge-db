@@ -48,105 +48,116 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        if args.command == "fetch":
-            from knowledge.fetch import fetch_sources
-            from knowledge.config import ensure_data_dir
-            from knowledge.sources import load_sources
+        match args.command:
+            case "fetch":
+                from knowledge.fetch import fetch_sources
+                from knowledge.config import ensure_data_dir
+                from knowledge.sources import load_sources
 
-            data_dir = ensure_data_dir(resolve_data_dir(args.config))
-            sources = load_sources(resolve_sources_yaml(args.config))
-            changed = fetch_sources(
-                sources,
-                data_dir,
-                only=args.only,
-                verbose=args.verbose,
-                config_dir=args.config,
-            )
-            if changed:
-                print(f"Updated: {', '.join(changed)}")
-            else:
-                print("All sources up to date.")
+                data_dir = ensure_data_dir(resolve_data_dir(args.config))
+                sources = load_sources(resolve_sources_yaml(args.config))
+                changed = fetch_sources(
+                    sources,
+                    data_dir,
+                    only=args.only,
+                    verbose=args.verbose,
+                    config_dir=args.config,
+                )
+                if changed:
+                    print(f"Updated: {', '.join(changed)}")
+                else:
+                    print("All sources up to date.")
 
-        elif args.command == "index":
-            from knowledge.indexer import cmd_index
+            case "index":
+                from knowledge.indexer import cmd_index
 
-            cmd_index(config_dir=args.config, force=args.force, verbose=args.verbose)
+                cmd_index(
+                    config_dir=args.config, force=args.force, verbose=args.verbose
+                )
 
-        elif args.command == "update":
-            from knowledge.fetch import fetch_sources
-            from knowledge.indexer import cmd_index
-            from knowledge.config import ensure_data_dir
-            from knowledge.sources import load_sources
+            case "update":
+                from knowledge.fetch import fetch_sources
+                from knowledge.indexer import cmd_index
+                from knowledge.config import ensure_data_dir
+                from knowledge.sources import load_sources
 
-            data_dir = ensure_data_dir(resolve_data_dir(args.config))
-            sources = load_sources(resolve_sources_yaml(args.config))
-            print("Fetching sources...")
-            fetch_sources(
-                sources, data_dir, verbose=args.verbose, config_dir=args.config
-            )
-            print("Indexing...")
-            cmd_index(config_dir=args.config, force=args.force, verbose=args.verbose)
+                data_dir = ensure_data_dir(resolve_data_dir(args.config))
+                sources = load_sources(resolve_sources_yaml(args.config))
+                print("Fetching sources...")
+                fetch_sources(
+                    sources, data_dir, verbose=args.verbose, config_dir=args.config
+                )
+                print("Indexing...")
+                cmd_index(
+                    config_dir=args.config, force=args.force, verbose=args.verbose
+                )
 
-        elif args.command == "search":
-            from knowledge.config import load_config
-            from knowledge.search import cmd_search
+            case "search":
+                from knowledge.config import load_config
+                from knowledge.search import cmd_search
 
-            if not args.query:
-                print("Error: search query is required")
-                sys.exit(1)
+                if not args.query:
+                    print("Error: search query is required")
+                    sys.exit(1)
 
-            cfg = load_config(args.config)
-            top_k = args.top_k if args.top_k is not None else cfg.search.default_top_k
-            if top_k < 1:
-                print("Error: --top-k must be >= 1", file=sys.stderr)
-                sys.exit(1)
+                cfg = load_config(args.config)
+                top_k = (
+                    args.top_k if args.top_k is not None else cfg.search.default_top_k
+                )
+                if top_k < 1:
+                    print("Error: --top-k must be >= 1", file=sys.stderr)
+                    sys.exit(1)
 
-            results = cmd_search(
-                query=args.query,
-                top_k=top_k,
-                source=args.source,
-                config_dir=args.config,
-            )
+                results = cmd_search(
+                    query=args.query,
+                    top_k=top_k,
+                    source=args.source,
+                    config_dir=args.config,
+                )
 
-            if args.json:
-                print(json.dumps(results, indent=2, ensure_ascii=False))
-            elif results:
-                header = f"{'Source':<16} {'Title':<25} {'Category':<10} {'Heading Path':<17} {'Distance':<8}"
+                if args.json:
+                    print(json.dumps(results, indent=2, ensure_ascii=False))
+                elif results:
+                    header = f"{'Source':<16} {'Title':<25} {'Category':<10} {'Heading Path':<17} {'Distance':<8}"
+                    print(header)
+                    print("-" * len(header))
+                    for r in results:
+                        print(
+                            f"{r['source'][:14]:<16} {r['title'][:23]:<25} "
+                            f"{r['category'][:8]:<10} {r['heading_path'][:15]:<17} "
+                            f"{r['distance']:<8.4f}"
+                        )
+
+            case "list-sources":
+                from knowledge.sources import load_sources
+
+                data_dir = resolve_data_dir(args.config)
+                sources = load_sources(resolve_sources_yaml(args.config))
+
+                header = f"{'Name':<20} {'Title':<25} {'Category':<10} {'Type':<8} {'Status':<12}"
                 print(header)
                 print("-" * len(header))
-                for r in results:
+                for s in sources:
+                    if s.source_type == "local":
+                        st = (
+                            "available"
+                            if s.path and Path(s.path).expanduser().exists()
+                            else "missing"
+                        )
+                    else:
+                        st = (
+                            "cloned"
+                            if (data_dir / "sources" / s.name).exists()
+                            else "not-cloned"
+                        )
                     print(
-                        f"{r['source'][:14]:<16} {r['title'][:23]:<25} "
-                        f"{r['category'][:8]:<10} {r['heading_path'][:15]:<17} "
-                        f"{r['distance']:<8.4f}"
+                        f"{s.name[:18]:<20} {s.title[:23]:<25} {s.category[:8]:<10} "
+                        f"{s.source_type:<8} {st:<12}"
                     )
 
-        elif args.command == "list-sources":
-            from knowledge.sources import load_sources
-
-            data_dir = resolve_data_dir(args.config)
-            sources = load_sources(resolve_sources_yaml(args.config))
-
-            header = f"{'Name':<20} {'Title':<25} {'Category':<10} {'Type':<8} {'Status':<12}"
-            print(header)
-            print("-" * len(header))
-            for s in sources:
-                if s.source_type == "local":
-                    st = (
-                        "available"
-                        if s.path and Path(s.path).expanduser().exists()
-                        else "missing"
-                    )
-                else:
-                    st = (
-                        "cloned"
-                        if (data_dir / "sources" / s.name).exists()
-                        else "not-cloned"
-                    )
-                print(
-                    f"{s.name[:18]:<20} {s.title[:23]:<25} {s.category[:8]:<10} "
-                    f"{s.source_type:<8} {st:<12}"
-                )
+            case _:
+                print(f"Error: unknown command '{args.command}'", file=sys.stderr)
+                sys.exit(1)
 
     except ConfigError as e:
         print(f"Config error: {e}")

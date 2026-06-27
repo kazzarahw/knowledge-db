@@ -13,7 +13,13 @@ from types import FrameType
 import numpy as np
 
 from knowledge.chunk import Section, chunk_file
-from knowledge.config import resolve_data_dir, ensure_data_dir, resolve_sources_yaml
+from knowledge.config import (
+    Config,
+    load_config,
+    resolve_data_dir,
+    ensure_data_dir,
+    resolve_sources_yaml,
+)
 from knowledge.db import get_connection, ensure_schema
 from knowledge.embed import SentenceTransformerEmbedder, get_embedder
 from knowledge.fetch import fetch_sources, get_git_head
@@ -39,8 +45,6 @@ def _source_signature(source_dir: Path) -> str | None:
 def _walk_files(
     source_dir: Path, source: Source, cfg: Config | None = None
 ) -> list[Path]:
-    from knowledge.config import Config, load_config
-
     if cfg is None:
         cfg = load_config()
 
@@ -73,11 +77,7 @@ def _index_source(
     current_head: str | None = None,
     cfg: Config | None = None,
 ) -> int:
-    from knowledge.config import Config
-
     if cfg is None:
-        from knowledge.config import load_config
-
         cfg = load_config()
 
     source_dir = data_dir / "sources" / source.name
@@ -167,6 +167,54 @@ def _index_source(
     return len(all_sections)
 
 
+def _check_embedding_dim(
+    conn: sqlite3.Connection, dim: int, force: bool
+) -> tuple[bool, str | None]:
+    """Check embedding dim against stored index. Returns (tables_exist, error_message_or_None)."""
+    tables_exist = (
+        conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sections'"
+        ).fetchone()[0]
+        > 0
+    )
+
+    if tables_exist and not force:
+        has_meta = conn.execute("SELECT COUNT(*) FROM index_meta").fetchone()[0] > 0
+        if not has_meta:
+            return (
+                tables_exist,
+                (
+                    "Warning: Index metadata missing -- index may be corrupt. "
+                    "Run 'kdb index --force' to rebuild."
+                ),
+            )
+        existing_dim = conn.execute(
+            "SELECT value FROM index_meta WHERE key = 'embedding_dim'"
+        ).fetchone()
+        if existing_dim:
+            try:
+                stored_dim = int(existing_dim[0])
+            except (ValueError, TypeError):
+                return (
+                    tables_exist,
+                    (
+                        "Warning: corrupt index metadata "
+                        f"(embedding_dim='{existing_dim[0]}'). "
+                        "Run 'kdb index --force' to rebuild."
+                    ),
+                )
+            if stored_dim != dim:
+                return (
+                    tables_exist,
+                    (
+                        f"Error: Model dimension ({dim}) differs from stored "
+                        f"index ({stored_dim}). "
+                        "Run 'kdb index --force' to rebuild."
+                    ),
+                )
+    return (tables_exist, None)
+
+
 def cmd_index(
     config_dir: str | None = None,
     force: bool = False,
@@ -183,8 +231,6 @@ def cmd_index(
         force: Drop and recreate the entire index.
         verbose: Print per-file and per-source progress.
     """
-    from knowledge.config import load_config
-
     cfg = load_config(config_dir)
     data_dir = ensure_data_dir(resolve_data_dir(config_dir))
     sources = load_sources(resolve_sources_yaml(config_dir))
@@ -193,49 +239,17 @@ def cmd_index(
 
     try:
         embedder = get_embedder(config_dir=config_dir)
-    except BaseException:
+    except Exception:
         conn.close()
         raise
     dim = embedder.dim
     model_name = embedder.model_name
 
-    # Check if database has existing tables (safe before ensure_schema)
-    tables_exist = (
-        conn.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sections'"
-        ).fetchone()[0]
-        > 0
-    )
-
-    if tables_exist and not force:
-        has_meta = conn.execute("SELECT COUNT(*) FROM index_meta").fetchone()[0] > 0
-        if not has_meta:
-            conn.close()
-            print(
-                "Warning: Index metadata missing -- index may be corrupt. "
-                "Run 'kdb index --force' to rebuild."
-            )
-            sys.exit(1)
-        existing_dim = conn.execute(
-            "SELECT value FROM index_meta WHERE key = 'embedding_dim'"
-        ).fetchone()
-        if existing_dim:
-            try:
-                stored_dim = int(existing_dim[0])
-            except (ValueError, TypeError):
-                conn.close()
-                print(
-                    f"Warning: corrupt index metadata (embedding_dim='{existing_dim[0]}'). "
-                    "Run 'kdb index --force' to rebuild."
-                )
-                sys.exit(1)
-            if stored_dim != dim:
-                conn.close()
-                print(
-                    f"Error: Model dimension ({dim}) differs from stored index ({stored_dim}). "
-                    "Run 'kdb index --force' to rebuild."
-                )
-                sys.exit(1)
+    tables_exist, err = _check_embedding_dim(conn, dim, force)
+    if err:
+        conn.close()
+        print(err)
+        sys.exit(1)
 
     if force:
         conn.executescript("DROP TABLE IF EXISTS sections")

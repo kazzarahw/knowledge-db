@@ -69,7 +69,7 @@ def test_index_source_sorts_sections_by_length(tmp_path: Path) -> None:
             return_value=[data_dir / "sources" / "test" / "a.md"],
         ),
         patch("knowledge.indexer.chunk_file") as mock_chunk,
-        patch("knowledge.config.load_config") as mock_cfg,
+        patch("knowledge.indexer.load_config") as mock_cfg,
     ):
         mock_chunk.side_effect = lambda fpath, src, cat, rel_path: sections
         mock_cfg.return_value = MagicMock(embed=MagicMock(batch_size=32))
