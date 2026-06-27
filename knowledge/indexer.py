@@ -235,15 +235,6 @@ def cmd_index(
         conn.executescript("DROP TABLE IF EXISTS index_meta")
         ensure_schema(conn)
         conn.execute("VACUUM")
-    else:
-        tables_exist = (
-            conn.execute(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sections'"
-            ).fetchone()[0]
-            > 0
-        )
-        if not tables_exist:
-            ensure_schema(conn)
 
     def _on_sigint(signum: int, frame: FrameType | None) -> None:
         print("\nInterrupted. Index is partial. Run 'kdb index' to resume.")
@@ -258,92 +249,97 @@ def cmd_index(
         conn.close()
         sys.exit(130)
 
-    signal.signal(signal.SIGINT, _on_sigint)
+    old_handler = signal.signal(signal.SIGINT, _on_sigint)
+    try:
+        source_failures = 0
+        for source in sources:
+            source_dir = data_dir / "sources" / source.name
 
-    source_failures = 0
-    for source in sources:
-        source_dir = data_dir / "sources" / source.name
+            if source.source_type == "git" and not source_dir.exists():
+                print(f"Skipping {source.name} -- not cloned. Run 'kdb fetch' first.")
+                continue
 
-        if source.source_type == "git" and not source_dir.exists():
-            print(f"Skipping {source.name} -- not cloned. Run 'kdb fetch' first.")
-            continue
-
-        if force:
-            needs_index = True
-            current_head: str | None = None
-        else:
-            if source.source_type == "git":
-                current_head = get_git_head(source_dir)
+            if force:
+                needs_index = True
+                current_head: str | None = None
             else:
-                current_head = (
-                    None if not source_dir.exists() else _source_signature(source_dir)
+                if source.source_type == "git":
+                    current_head = get_git_head(source_dir)
+                else:
+                    current_head = (
+                        None
+                        if not source_dir.exists()
+                        else _source_signature(source_dir)
+                    )
+                stored = conn.execute(
+                    "SELECT git_head FROM source_state WHERE name = ?",
+                    (source.name,),
+                ).fetchone()
+                needs_index = stored is None or stored[0] != current_head
+
+            if not needs_index:
+                if verbose:
+                    print(f"  {source.name}: unchanged, skipping")
+                continue
+
+            print(f"Indexing {source.name}...")
+            try:
+                conn.execute("BEGIN")
+                num_sections = _index_source(
+                    source,
+                    conn,
+                    data_dir,
+                    verbose,
+                    current_head=current_head,
+                    cfg=cfg,
                 )
-            stored = conn.execute(
-                "SELECT git_head FROM source_state WHERE name = ?",
-                (source.name,),
-            ).fetchone()
-            needs_index = stored is None or stored[0] != current_head
+                conn.commit()
+                if verbose:
+                    print(f"  {source.name}: {num_sections} sections indexed")
+            except Exception as e:
+                source_failures += 1
+                conn.rollback()
+                print(f"  Error indexing {source.name}: {e}", file=sys.stderr)
+                continue
 
-        if not needs_index:
-            if verbose:
-                print(f"  {source.name}: unchanged, skipping")
-            continue
-
-        print(f"Indexing {source.name}...")
-        try:
+        configured_names = [s.name for s in sources]
+        if configured_names:
             conn.execute("BEGIN")
-            num_sections = _index_source(
-                source,
-                conn,
-                data_dir,
-                verbose,
-                current_head=current_head,
-                cfg=cfg,
+            placeholders = ",".join("?" * len(configured_names))
+            conn.execute(
+                f"DELETE FROM sections_fts WHERE rowid IN "
+                f"(SELECT id FROM sections WHERE source NOT IN ({placeholders}))",
+                configured_names,
             )
+            conn.execute(
+                f"DELETE FROM sections_fts_title WHERE rowid IN "
+                f"(SELECT id FROM sections WHERE source NOT IN ({placeholders}))",
+                configured_names,
+            )
+            conn.execute(
+                f"DELETE FROM sections WHERE source NOT IN ({placeholders})",
+                configured_names,
+            )
+            conn.execute(
+                f"DELETE FROM source_state WHERE name NOT IN ({placeholders})",
+                configured_names,
+            )
+
+        conn.execute(
+            "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('indexed_at', ?)",
+            (datetime.now(timezone.utc).isoformat(),),
+        )
+
+        if source_failures == 0:
             conn.commit()
-            if verbose:
-                print(f"  {source.name}: {num_sections} sections indexed")
-        except Exception as e:
-            source_failures += 1
-            conn.rollback()
-            print(f"  Error indexing {source.name}: {e}", file=sys.stderr)
-            continue
-
-    configured_names = [s.name for s in sources]
-    if configured_names:
-        placeholders = ",".join("?" * len(configured_names))
-        conn.execute(
-            f"DELETE FROM sections_fts WHERE rowid IN "
-            f"(SELECT id FROM sections WHERE source NOT IN ({placeholders}))",
-            configured_names,
-        )
-        conn.execute(
-            f"DELETE FROM sections_fts_title WHERE rowid IN "
-            f"(SELECT id FROM sections WHERE source NOT IN ({placeholders}))",
-            configured_names,
-        )
-        conn.execute(
-            f"DELETE FROM sections WHERE source NOT IN ({placeholders})",
-            configured_names,
-        )
-        conn.execute(
-            f"DELETE FROM source_state WHERE name NOT IN ({placeholders})",
-            configured_names,
-        )
-
-    conn.execute(
-        "INSERT OR REPLACE INTO index_meta (key, value) VALUES ('indexed_at', ?)",
-        (datetime.now(timezone.utc).isoformat(),),
-    )
-
-    if source_failures == 0:
-        conn.commit()
-        conn.close()
-        print("Index complete.")
-    else:
-        conn.commit()
-        conn.close()
-        print(
-            f"Index complete with {source_failures} source(s) failed.",
-            file=sys.stderr,
-        )
+            conn.close()
+            print("Index complete.")
+        else:
+            conn.commit()
+            conn.close()
+            print(
+                f"Index complete with {source_failures} source(s) failed.",
+                file=sys.stderr,
+            )
+    finally:
+        signal.signal(signal.SIGINT, old_handler)
