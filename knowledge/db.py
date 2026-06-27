@@ -1,42 +1,40 @@
-"""SQLite connection, schema, and sqlite-vec integration."""
+"""SQLite connection and schema — FTS5 tables replace vec0."""
 
 from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
 
-import sqlite_vec
-
 
 def get_connection(db_path: Path) -> sqlite3.Connection:
-    """Open a WAL-mode SQLite connection with sqlite-vec loaded.
+    """Open a WAL-mode SQLite connection.
+
+    FTS5 is built into SQLite — no extension loading needed.
+    sqlite-vec extension loading has been removed.
 
     Args:
         db_path: Path to the SQLite database file.
 
     Returns:
-        Configured connection with Row factory, foreign keys, and vec0 support.
+        Configured connection with Row factory, foreign keys, WAL mode.
     """
     conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
-    conn.enable_load_extension(True)
-    sqlite_vec.load(conn)
     return conn
 
 
-def ensure_schema(conn: sqlite3.Connection, dim: int) -> None:
+def ensure_schema(conn: sqlite3.Connection) -> None:
     """Create all required tables if they don't exist.
 
-    Creates sections, section_vectors (vec0 with PARTITION KEY on source),
+    Creates sections, sections_fts (porter), sections_fts_title (trigram),
     source_state, and index_meta tables. Idempotent — safe to call repeatedly.
 
     Args:
         conn: Open database connection.
-        dim: Embedding dimension for the vec0 table schema.
     """
-    conn.executescript(f"""
+    conn.executescript("""
         CREATE TABLE IF NOT EXISTS sections (
             id INTEGER PRIMARY KEY,
             source TEXT NOT NULL,
@@ -48,10 +46,16 @@ def ensure_schema(conn: sqlite3.Connection, dim: int) -> None:
             UNIQUE(source, path, heading_path)
         );
 
-        CREATE VIRTUAL TABLE IF NOT EXISTS section_vectors USING vec0(
-            section_id INTEGER PRIMARY KEY,
-            source TEXT PARTITION KEY,
-            embedding FLOAT[{dim}] DISTANCE_METRIC=COSINE
+        CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts USING fts5(
+            title, heading_path, body,
+            content=sections,
+            tokenize='porter unicode61'
+        );
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS sections_fts_title USING fts5(
+            title, heading_path,
+            content=sections,
+            tokenize='trigram'
         );
 
         CREATE TABLE IF NOT EXISTS source_state (
