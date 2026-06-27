@@ -1,18 +1,116 @@
-"""Vector search via sqlite-vec CTE pattern."""
+"""FTS5 full-text search with query router and column-weighted BM25."""
 
 from __future__ import annotations
 
+import re
+import sqlite3
 import sys
+from enum import StrEnum
 from pathlib import Path
 from typing import TypedDict
 
 from knowledge.config import resolve_data_dir
 from knowledge.db import get_connection
-from knowledge.embed import get_embedder
+
+
+class QueryTier(StrEnum):
+    """Query classification tier for routing to optimal FTS5 strategy."""
+
+    EXACT = "exact"
+    TOOL_COMMAND = "tool"
+    PATH = "path"
+    CONCEPTUAL = "conceptual"
+
+
+_QUERY_ROUTERS: list[tuple[re.Pattern[str], QueryTier]] = [
+    (
+        re.compile(
+            r"^(?:"
+            r"CVE-\d{4}-\d{4,}"
+            r"|"
+            r"[A-Z]+_[A-Z]+_\w+(?:\s+(?:0x)?[0-9A-Fa-f]+)?"
+            r"|"
+            r"[A-Z]+\s+0x[0-9A-Fa-f]{8,}"
+            r"|"
+            r"0x[0-9A-Fa-f]{8,}"
+            r")"
+        ),
+        QueryTier.EXACT,
+    ),
+    (
+        re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]*\s+-{1,2}\w+"),
+        QueryTier.TOOL_COMMAND,
+    ),
+    (
+        re.compile(r"/"),
+        QueryTier.PATH,
+    ),
+]
+
+
+def _classify_query(query: str) -> QueryTier:
+    """Classify a search query into a routing tier.
+
+    First-match-wins priority: EXACT > TOOL_COMMAND > PATH > CONCEPTUAL.
+
+    Args:
+        query: Raw user query string.
+
+    Returns:
+        QueryTier enum value determining the search strategy.
+    """
+    stripped = query.strip()
+    for pattern, tier in _QUERY_ROUTERS:
+        if pattern.search(stripped):
+            return tier
+    return QueryTier.CONCEPTUAL
+
+
+def _escape_fts5_value(term: str) -> str:
+    """Escape a single FTS5 term to prevent operator/keyword injection.
+
+    Always wraps in double quotes to neutralise FTS5 operators
+    (NOT, AND, OR) and special characters (``^  +  -  *  (  )  ~  ``).
+    Embedded quotes are doubled per FTS5 escaping rules.
+    """
+    escaped = term.replace('"', '""')
+    return f'"{escaped}"'
+
+
+def _build_fts5_query(query: str, tier: QueryTier) -> str:
+    """Build an FTS5 MATCH expression from the query and tier.
+
+    Args:
+        query: Raw user query string.
+        tier: Classified query tier.
+
+    Returns:
+        FTS5 MATCH expression string.
+    """
+    match tier:
+        case QueryTier.EXACT:
+            return _escape_fts5_value(query.strip())
+        case QueryTier.TOOL_COMMAND:
+            first = query.strip().split()[0]
+            if not first or first.startswith("-"):
+                return ""
+            return f"{_escape_fts5_value(first)}*"
+        case QueryTier.PATH:
+            return _escape_fts5_value(query.strip())
+        case QueryTier.CONCEPTUAL:
+            tokens = query.strip().split()
+            if not tokens:
+                return ""
+            return " AND ".join(_escape_fts5_value(t) for t in tokens)
 
 
 class SearchResult(TypedDict):
-    """Single knowledge-base search result row."""
+    """Single knowledge-base search result row.
+
+    ``distance`` field name preserved from vec0 era for JSON backward
+    compatibility. Now contains a BM25 relevance score (lower = more
+    relevant). BM25 scores are not comparable across different queries.
+    """
 
     source: str
     title: str
@@ -23,74 +121,127 @@ class SearchResult(TypedDict):
     distance: float
 
 
+def _select_fts_table(tier: QueryTier) -> str:
+    """Select which FTS5 table to query based on tier.
+
+    Each tier routes to exactly one table — scores are never merged
+    across different tokenizers.
+
+    Args:
+        tier: Classified query tier.
+
+    Returns:
+        FTS5 table name.
+    """
+    if tier == QueryTier.EXACT:
+        return "sections_fts_title"
+    return "sections_fts"
+
+
+def _bm25_order(tier: QueryTier) -> str:
+    """Return the ORDER BY clause with appropriate BM25 weights.
+
+    Args:
+        tier: Classified query tier.
+
+    Returns:
+        SQL fragment for ordering.
+    """
+    if tier == QueryTier.EXACT:
+        return "bm25(sections_fts_title, 5.0, 3.0)"
+    return "bm25(sections_fts, 5.0, 3.0, 1.0)"
+
+
 def cmd_search(
     query: str,
     top_k: int = 10,
     source: str | None = None,
     config_dir: str | None = None,
 ) -> list[SearchResult]:
-    """Search the index. Returns list of result dicts ordered by relevance.
+    """Search the FTS5 index.
 
-    Validates that the embedding model dimension matches the stored index
-    to prevent silent garbage results from model mismatch.
+    Classifies the query via the query router, dispatches to the
+    appropriate FTS5 table, ranks by column-weighted BM25, and
+    returns results ordered by relevance.
+
+    Args:
+        query: Search query string.
+        top_k: Maximum number of results to return.
+        source: Optional source name filter.
+        config_dir: Override config directory path.
+
+    Returns:
+        List of SearchResult dicts ordered by relevance (best first).
     """
     data_dir = resolve_data_dir(config_dir)
     db_path = data_dir / "index.db"
 
     if not db_path.exists():
-        print("Error: No index found. Run 'kdb index' first.")
+        print("Error: No index found. Run 'kdb index' first.", file=sys.stderr)
+        return []
+
+    if not query.strip():
+        print("Error: empty search query", file=sys.stderr)
         return []
 
     conn = None
     try:
         conn = get_connection(db_path)
+
+        has_fts = (
+            conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master "
+                "WHERE type='table' AND name='sections_fts'"
+            ).fetchone()[0]
+            > 0
+        )
         has_sections = (
             conn.execute(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sections'"
             ).fetchone()[0]
             > 0
         )
-        if not has_sections:
-            print("Error: No index found. Run 'kdb index' first.")
-            return []
 
-        # Validate model dimension matches stored index
-        stored_dim = conn.execute(
-            "SELECT value FROM index_meta WHERE key = 'embedding_dim'"
-        ).fetchone()
-        embedder = get_embedder(config_dir=config_dir)
-        if stored_dim and embedder.dim != int(stored_dim[0]):
+        if not has_fts and has_sections:
             print(
-                f"Error: Model dimension ({embedder.dim}) differs from stored index ({stored_dim[0]}). Rebuild with 'kdb index --force'."
+                "Error: Index needs rebuild. "
+                "Run 'kdb index --force' to migrate from old format.",
+                file=sys.stderr,
             )
             return []
+        if not has_sections:
+            print("Error: No index found. Run 'kdb index' first.", file=sys.stderr)
+            return []
 
-        query_vec = embedder.embed_query(query)
-        serialized = query_vec.tobytes()
+        tier = _classify_query(query)
+        fts_table = _select_fts_table(tier)
+        fts_query = _build_fts5_query(query, tier)
+        if not fts_query:
+            print("Error: empty search query after processing", file=sys.stderr)
+            return []
+        bm25_clause = _bm25_order(tier)
 
         source_filter = ""
         source_params: list[str] = []
         if source:
-            source_filter = "AND section_vectors.source = ?"
+            source_filter = "AND s.source = ?"
             source_params = [source]
 
-        rows = conn.execute(
-            """
-            WITH knn_matches AS (
-                SELECT section_id, distance
-                FROM section_vectors
-                WHERE embedding MATCH ?
-                  AND k = ?
-                  {source_filter}
-            )
+        sql = f"""
             SELECT s.source, s.title, s.category, s.path,
-                   s.heading_path, s.body, m.distance
-            FROM knn_matches m
-            JOIN sections s ON s.id = m.section_id
-            ORDER BY m.distance
-            """.format(source_filter=source_filter),
-            [serialized, top_k, *source_params],
-        ).fetchall()
+                   s.heading_path, s.body, rank
+            FROM {fts_table} f
+            JOIN sections s ON s.id = f.rowid
+            WHERE {fts_table} MATCH ?
+              {source_filter}
+            ORDER BY {bm25_clause}
+            LIMIT ?
+        """
+        try:
+            rows = conn.execute(sql, [fts_query, *source_params, top_k]).fetchall()
+        except sqlite3.OperationalError as e:
+            print(f"Error: FTS5 query syntax error: {e}", file=sys.stderr)
+            return []
 
         if not rows:
             print("No results found.", file=sys.stderr)
@@ -106,7 +257,7 @@ def cmd_search(
                     path=row["path"],
                     heading_path=row["heading_path"],
                     body=row["body"],
-                    distance=row["distance"],
+                    distance=float(row["rank"]),
                 )
             )
 
