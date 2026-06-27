@@ -120,9 +120,6 @@ class TestSearchExecution:
 
     def test_empty_index_returns_empty(self, tmp_path: Path) -> None:
         """Search on an empty (no tables) index prints error, returns []."""
-        from knowledge.config import resolve_data_dir, ensure_data_dir
-
-        data_dir = ensure_data_dir(resolve_data_dir(str(tmp_path)))
         with patch("sys.stderr"):
             results = cmd_search("test", config_dir=str(tmp_path))
             assert results == []
