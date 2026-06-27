@@ -2,21 +2,6 @@
 # Place alongside sources.yaml in your config directory.
 # All fields have sensible defaults; uncomment to override.
 
-# ── Embedding settings ─────────────────────────────────────────────
-embed:
-  # Sentence-transformers model name (HuggingFace Hub ID or local path)
-  model: LiquidAI/LFM2.5-Embedding-350M
-  # Inference device: null = auto-detect (CUDA if available, else CPU)
-  device: cuda
-  # Sections per SentenceTransformer.encode() call
-  # Larger = faster GPU utilization but more memory
-  batch_size: 2048
-  # Allow models with custom HF Hub code (required by some models)
-  trust_remote_code: true
-  # Inference precision: null/auto = auto-detect (bf16 on Ampere+ GPUs, fp32 otherwise),
-  # "bf16" = force bf16, "fp32" = force fp32 (no bf16 even on Ampere+)
-  dtype: auto
-
 # ── Git fetch settings ─────────────────────────────────────────────
 # fetch:
 #   # Max seconds per git subprocess call (clone, pull, checkout, LFS)
