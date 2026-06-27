@@ -108,11 +108,11 @@ def _fetch_git_source(
     dest = data_dir / "sources" / source.name
 
     if not dest.exists():
-        return _clone(source, dest, verbose, git_timeout)
-    return _pull(source, dest, verbose, git_timeout)
+        return _clone_source(source, dest, verbose, git_timeout)
+    return _pull_source(source, dest, verbose, git_timeout)
 
 
-def _clone(source: Source, dest: Path, verbose: bool, git_timeout: int) -> bool:
+def _clone_source(source: Source, dest: Path, verbose: bool, git_timeout: int) -> bool:
     """Atomically clone a git repo into a temp dir, then rename."""
     repo_url = source.url
     parent = dest.parent
@@ -170,7 +170,7 @@ def _clone(source: Source, dest: Path, verbose: bool, git_timeout: int) -> bool:
     return True
 
 
-def _pull(source: Source, dest: Path, verbose: bool, git_timeout: int) -> bool:
+def _pull_source(source: Source, dest: Path, verbose: bool, git_timeout: int) -> bool:
     """Pull existing repo. Returns True if HEAD changed."""
     if verbose:
         print(f"  Pulling {source.name}")
@@ -232,7 +232,7 @@ def _pull(source: Source, dest: Path, verbose: bool, git_timeout: int) -> bool:
                 file=sys.stderr,
             )
             shutil.rmtree(str(dest))
-            return _clone(source, dest, verbose, git_timeout)
+            return _clone_source(source, dest, verbose, git_timeout)
         print(
             f"  Error pulling {source.name}: {result.stderr.strip()}", file=sys.stderr
         )

@@ -17,8 +17,8 @@ import pytest
         ("knowledge.indexer", "_walk_files", True),
         ("knowledge.indexer", "_index_source", True),
         ("knowledge.fetch", "_fetch_git_source", True),
-        ("knowledge.fetch", "_clone", False),
-        ("knowledge.fetch", "_pull", False),
+        ("knowledge.fetch", "_clone_source", True),
+        ("knowledge.fetch", "_pull_source", True),
     ],
 )
 def test_function_has_return_annotation(

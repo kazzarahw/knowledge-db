@@ -37,30 +37,35 @@ def test_fetch_sources_filters_by_only(tmp_path):
 
 def test_clone_invalid_url(tmp_path):
     """Cloning a bad URL returns False."""
-    from knowledge.fetch import _clone
+    from knowledge.fetch import _clone_source
 
     src = Source(
         name="bad-url", source_type="git", url="https://invalid.example.com/repo"
     )
-    assert _clone(src, tmp_path / "bad-url", verbose=False, git_timeout=300) is False
+    assert (
+        _clone_source(src, tmp_path / "bad-url", verbose=False, git_timeout=300)
+        is False
+    )
 
 
 def test_pull_nonexistent_dir_returns_false(tmp_path: Path) -> None:
     """_pull on nonexistent directory returns False, not crash."""
-    from knowledge.fetch import _pull
+    from knowledge.fetch import _pull_source
 
     src = Source(
         name="ghost",
         source_type="git",
         url="https://github.com/user/repo.git",
     )
-    assert _pull(src, tmp_path / "ghost", verbose=False, git_timeout=300) is False
+    assert (
+        _pull_source(src, tmp_path / "ghost", verbose=False, git_timeout=300) is False
+    )
 
 
 def test_pull_local_repo_no_remote(tmp_path: Path) -> None:
     """_pull on a git repo with no remote returns False."""
     import subprocess
-    from knowledge.fetch import _pull
+    from knowledge.fetch import _pull_source
 
     src = Source(
         name="local-pull",
@@ -88,5 +93,5 @@ def test_pull_local_repo_no_remote(tmp_path: Path) -> None:
         ["git", "commit", "-m", "initial"], cwd=dest, capture_output=True, check=True
     )
     # No remote → pull fails → returns False
-    result = _pull(src, dest, verbose=False, git_timeout=300)
+    result = _pull_source(src, dest, verbose=False, git_timeout=300)
     assert result is False
