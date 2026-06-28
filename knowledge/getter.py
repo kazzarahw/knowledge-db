@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 from knowledge.config import resolve_data_dir
 from knowledge.db import get_connection
