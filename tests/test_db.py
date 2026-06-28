@@ -77,6 +77,17 @@ def test_column_definitions(tmp_path):
     assert cols["heading_path"][3] == 0
     assert cols["body"][2] == "TEXT"
     assert cols["body"][3] == 1
+    assert "content_hash" in cols
+    assert cols["content_hash"][2] == "TEXT"
+    assert cols["content_hash"][3] == 0  # nullable
+    assert "rank_bias" in cols
+    assert cols["rank_bias"][2] == "REAL"
+    assert cols["rank_bias"][3] == 1  # NOT NULL
+    assert cols["rank_bias"][4] == "1.0"  # default
+    assert "source_title" in cols
+    assert cols["source_title"][2] == "TEXT"
+    assert cols["source_title"][3] == 1  # NOT NULL
+    assert cols["source_title"][4] == "''"  # default empty string
     cols_ss = {
         row[1]: row
         for row in conn.execute("PRAGMA table_info(source_state)").fetchall()

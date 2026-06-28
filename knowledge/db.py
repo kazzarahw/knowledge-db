@@ -43,6 +43,9 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             path TEXT NOT NULL,
             heading_path TEXT,
             body TEXT NOT NULL,
+            content_hash TEXT,
+            rank_bias REAL NOT NULL DEFAULT 1.0,
+            source_title TEXT NOT NULL DEFAULT '',
             UNIQUE(source, path, heading_path)
         );
 
@@ -69,3 +72,33 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             value TEXT NOT NULL
         );
     """)
+
+
+def _migrate_schema(conn: sqlite3.Connection) -> list[str]:
+    """Add missing columns to existing sections table.
+
+    Idempotent — safe to call repeatedly. Returns list of migration
+    messages (empty if none needed).
+
+    Args:
+        conn: Open database connection.
+
+    Returns:
+        List of description strings for applied migrations.
+    """
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(sections)")}
+    migrations: list[str] = []
+    if "content_hash" not in existing:
+        conn.execute("ALTER TABLE sections ADD COLUMN content_hash TEXT")
+        migrations.append("added content_hash column")
+    if "rank_bias" not in existing:
+        conn.execute(
+            "ALTER TABLE sections ADD COLUMN rank_bias REAL NOT NULL DEFAULT 1.0"
+        )
+        migrations.append("added rank_bias column")
+    if "source_title" not in existing:
+        conn.execute(
+            "ALTER TABLE sections ADD COLUMN source_title TEXT NOT NULL DEFAULT ''"
+        )
+        migrations.append("added source_title column")
+    return migrations
