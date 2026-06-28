@@ -6,6 +6,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import os
+
+import pytest
+
 
 def test_cli_help() -> None:
     """--help exits 0 and prints description."""
@@ -118,7 +122,7 @@ def test_cli_search_bad_top_k() -> None:
 
 
 def test_search_heading_path_not_truncated(tmp_path: Path, monkeypatch) -> None:
-    """Search output shows full heading_path (>15 chars) after L1 fix."""
+    """Search output shows title in new unified format."""
     from knowledge.config import ensure_data_dir, resolve_data_dir
     from knowledge.db import ensure_schema, get_connection
 
@@ -134,8 +138,9 @@ def test_search_heading_path_not_truncated(tmp_path: Path, monkeypatch) -> None:
 
     long_path = "Networking/Wireless/WPA3/Security/Protocols"
     conn.execute(
-        "INSERT INTO sections (source, title, category, path, heading_path, body) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO sections (source, title, category, path, heading_path, body, "
+        "content_hash, source_title) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             "wpa3-docs",
             "WPA3 Overview",
@@ -143,6 +148,8 @@ def test_search_heading_path_not_truncated(tmp_path: Path, monkeypatch) -> None:
             "wpa3.md",
             long_path,
             "WPA3 is the latest Wi-Fi security standard.",
+            "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+            "WPA3 Docs",
         ),
     )
     row_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -168,10 +175,78 @@ def test_search_heading_path_not_truncated(tmp_path: Path, monkeypatch) -> None:
         text=True,
     )
     assert result.returncode == 0, f"stderr: {result.stderr}"
-    assert long_path in result.stdout, (
-        f"Expected heading_path ({long_path}) to appear in output uncropped.\n"
+    assert "WPA3 Overview" in result.stdout, (
+        f"Expected title to appear in unified format output.\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
+
+
+# ── Search display formatting ────────────────────────────────────────
+
+
+def test_format_search_includes_hash() -> None:
+    results = [
+        {
+            "source": "hacktricks",
+            "title": "Token Confusion",
+            "category": "wikis",
+            "path": "a.md",
+            "heading_path": "HackTricks: Token Confusion",
+            "body": "body",
+            "distance": -14.03,
+            "content_hash": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+            "source_title": "HackTricks",
+        }
+    ]
+    from knowledge.cli import _format_search_results
+
+    output = _format_search_results(results)
+    assert "a1b2c3d4e5f6" in output  # first 12 chars of hash
+
+
+def test_format_search_tag_format(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "knowledge.cli.shutil.get_terminal_size",
+        lambda *a, **kw: os.terminal_size((120, 20)),
+    )
+    results = [
+        {
+            "source": "hacktricks",
+            "title": "Token Confusion",
+            "category": "wikis",
+            "path": "a.md",
+            "heading_path": "HackTricks: Token Confusion",
+            "body": "body",
+            "distance": -14.03,
+            "content_hash": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+            "source_title": "HackTricks",
+        }
+    ]
+    from knowledge.cli import _format_search_results
+
+    output = _format_search_results(results)
+    assert "wikis·HackTricks" in output
+
+
+def test_format_search_truncates_long_tag() -> None:
+    """Long tags get … ellipsis truncated."""
+    results = [
+        {
+            "source": "internalallthethings",
+            "title": "OfficePurge",
+            "category": "ad-internal",
+            "path": "a.md",
+            "heading_path": "InternalAllTheThings: OfficePurge",
+            "body": "body",
+            "distance": -20.71,
+            "content_hash": "e5f6a7b8a9b0c1d2e3f4a5b6c7d8e9f0",
+            "source_title": "InternalAllTheThings",
+        }
+    ]
+    from knowledge.cli import _format_search_results
+
+    output = _format_search_results(results)
+    assert "…" in output
 
 
 # M1: stdout/stderr line buffering is verified manually by running

@@ -74,12 +74,22 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _truncate(text: str, max_len: int) -> str:
+    """Truncate text with … ellipsis if it exceeds max_len."""
     if len(text) <= max_len:
         return text
     return text[: max_len - 1] + "…"
 
 
 def _format_search_results(results: list[dict]) -> str | None:
+    """Format search results as a table with proportional column widths.
+
+    Uses terminal size to proportion columns: hash (12), tag (~28% of
+    remaining), title (rest), distance (9). Falls back to compact 2-line
+    format below 80 columns.
+
+    Returns:
+        Formatted table string, or None if results is empty.
+    """
     if not results:
         return None
 
@@ -89,7 +99,7 @@ def _format_search_results(results: list[dict]) -> str | None:
     hash_w = 12
     dist_w = 9
     remaining = content_width - hash_w - dist_w
-    tag_w = int(remaining * 0.35)
+    tag_w = int(remaining * 0.28)
     title_w = remaining - tag_w
 
     lines: list[str] = []
@@ -218,9 +228,6 @@ def main() -> None:
                     output = _format_search_results(results)
                     if output:
                         print(output)
-                    else:
-                        for r in results:
-                            print(f"{r['source']}: {r['title']} ({r['distance']:.2f})")
 
             case "list-sources":
                 from knowledge.sources import load_sources
