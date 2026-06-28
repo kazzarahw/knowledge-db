@@ -7,6 +7,7 @@ import logging
 import signal
 import sqlite3
 import sys
+from collections import namedtuple
 from datetime import datetime, timezone
 from pathlib import Path
 from types import FrameType
@@ -184,23 +185,27 @@ def _fts5_sync_sections(
     if rank_bias is None:
         rank_bias = _lookup_rank_bias(sections[0].category)
 
-    to_insert: list[tuple[str, float, str, str, str, str, str, str, str]] = []
+    _SecRow = namedtuple(
+        "_SecRow",
+        "content_hash rank_bias source title category path heading_path body source_title",
+    )
+    to_insert: list[_SecRow] = []
     for s in sections:
         h = hashlib.sha256(s.body.encode()).hexdigest()
         if h in content_hashes_seen:
             continue
         content_hashes_seen.add(h)
         to_insert.append(
-            (
-                h,
-                rank_bias,
-                s.source,
-                s.title,
-                s.category,
-                s.path,
-                s.heading_path,
-                s.body,
-                source_title,
+            _SecRow(
+                content_hash=h,
+                rank_bias=rank_bias,
+                source=s.source,
+                title=s.title,
+                category=s.category,
+                path=s.path,
+                heading_path=s.heading_path,
+                body=s.body,
+                source_title=source_title,
             )
         )
 
@@ -220,10 +225,10 @@ def _fts5_sync_sections(
         (source_name,),
     ).fetchall()
 
-    # to_insert tuple: (content_hash, rank_bias, source, title, category,
-    #                    path, heading_path, body, source_title)
-    #                                    t[3]=title  t[6]=heading_path  t[7]=body
-    fts_tuples = [(sec_ids[i][0], t[3], t[6], t[7]) for i, t in enumerate(to_insert)]
+    fts_tuples = [
+        (sec_ids[i][0], t.title, t.heading_path, t.body)
+        for i, t in enumerate(to_insert)
+    ]
     conn.executemany(
         "INSERT INTO sections_fts(rowid, title, heading_path, body) "
         "VALUES (?, ?, ?, ?)",

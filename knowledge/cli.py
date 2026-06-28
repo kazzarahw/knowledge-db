@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import shutil
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from knowledge.config import (
     VERSION,
@@ -14,6 +16,9 @@ from knowledge.config import (
     resolve_data_dir,
     resolve_sources_yaml,
 )
+
+if TYPE_CHECKING:
+    from knowledge.sources import Source
 
 
 def _validate_hex_prefix(value: str) -> str:
@@ -108,9 +113,10 @@ def _format_search_results(results: list[dict]) -> str | None:
         lines.append(f"{'Hash':<14} {'Tag':<{tag_w}}")
         lines.append("─" * (14 + tag_w + 2))
         for r in results:
-            tag = f"{r['category']}·{r.get('source_title', r['source'])}"
+            tag = f"{r['category']}·{r.get('source_title') or r['source']}"
             h = r["content_hash"][:12] if r.get("content_hash") else "?" * 12
-            title = _truncate(r["title"], title_w)
+            title = html.unescape(_truncate(r["title"], title_w))
+            body = html.unescape(_truncate(r.get("body", ""), 60))
             dist = f"{r['distance']:.2f}"
             lines.append(f"{h:<14} {_truncate(tag, tag_w):<{tag_w}}")
             lines.append(f"{'':<14} {title:<{title_w}} {dist:>{dist_w}}")
@@ -122,9 +128,10 @@ def _format_search_results(results: list[dict]) -> str | None:
         lines.append(header)
         lines.append("─" * len(header))
         for r in results:
-            tag = f"{r['category']}·{r.get('source_title', r['source'])}"
+            tag = f"{r['category']}·{r.get('source_title') or r['source']}"
             h = r["content_hash"][:12] if r.get("content_hash") else "?" * 12
-            title = _truncate(r["title"], title_w)
+            title = html.unescape(_truncate(r["title"], title_w))
+            body = html.unescape(_truncate(r.get("body", ""), 60))
             dist = f"{r['distance']:.2f}"
             lines.append(
                 f"{h:<{hash_w}} {_truncate(tag, tag_w):<{tag_w}} "
@@ -134,9 +141,49 @@ def _format_search_results(results: list[dict]) -> str | None:
     return "\n".join(lines)
 
 
+def _source_status(s: Source, data_dir: Path) -> str:
+    """Return clone/availability status for a source."""
+    if s.source_type == "local":
+        return (
+            "available" if s.path and Path(s.path).expanduser().exists() else "missing"
+        )
+    return "cloned" if (data_dir / "sources" / s.name).exists() else "not-cloned"
+
+
+def _cmd_list_sources(sources: list[Source], data_dir: Path) -> None:
+    """List all configured sources with terminal-width-aware formatting."""
+    term_width = shutil.get_terminal_size().columns
+    if term_width < 80:
+        header = f"{'Name':<34} {'Status':<12}"
+        print(header)
+        print("-" * min(term_width, 48))
+        for s in sources:
+            st = _source_status(s, data_dir)
+            print(f"{s.name:<34} {st:<12}")
+        return
+    table_width = min(term_width, 118)
+    name_w = 34
+    title_w = max(30, table_width - 66)
+    cat_w = 10
+    type_w = 8
+    status_w = 12
+    header = (
+        f"{'Name':<{name_w}} {'Title':<{title_w}} "
+        f"{'Category':<{cat_w}} {'Type':<{type_w}} {'Status':<{status_w}}"
+    )
+    print(header)
+    print("-" * table_width)
+    for s in sources:
+        st = _source_status(s, data_dir)
+        print(
+            f"{s.name:<{name_w}} {s.title[:title_w]:<{title_w}} "
+            f"{s.category[:cat_w]:<{cat_w}} {s.source_type:<{type_w}} {st:<{status_w}}"
+        )
+
+
 def _print_get_result(result: dict) -> None:
     """Print a formatted section result for ``kdb get``."""
-    print(f"Hash:\t\t{result['hash']}")
+    print(f"Hash:\t\t{result['content_hash']}")
     print(f"Source:\t\t{result['source']}")
     print(f"Title:\t\t{result['title']}")
     print(f"Category:\t{result['category']}")
@@ -234,27 +281,7 @@ def main() -> None:
 
                 data_dir = resolve_data_dir(args.config)
                 sources = load_sources(resolve_sources_yaml(args.config))
-
-                header = f"{'Name':<34} {'Title':<50} {'Category':<10} {'Type':<8} {'Status':<12}"
-                print(header)
-                print("-" * len(header))
-                for s in sources:
-                    if s.source_type == "local":
-                        st = (
-                            "available"
-                            if s.path and Path(s.path).expanduser().exists()
-                            else "missing"
-                        )
-                    else:
-                        st = (
-                            "cloned"
-                            if (data_dir / "sources" / s.name).exists()
-                            else "not-cloned"
-                        )
-                    print(
-                        f"{s.name[:32]:<34} {s.title[:48]:<50} {s.category[:8]:<10} "
-                        f"{s.source_type:<8} {st:<12}"
-                    )
+                _cmd_list_sources(sources, data_dir)
 
             case "get":
                 from knowledge.getter import cmd_get
