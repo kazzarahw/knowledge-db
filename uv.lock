@@ -21,6 +21,15 @@ wheels = [
 ]
 
 [[package]]
+name = "docutils"
+version = "0.23"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/39/a4/5180d9afc57e8fca05601dd652bdff19604c218814037fe90ffc7625a50a/docutils-0.23.tar.gz", hash = "sha256:746f5060322511280a1e50eb76846ed6bf2342984b2ac04dc42caa1a8d78799e", size = 2303823, upload-time = "2026-05-27T17:41:06.934Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/32/91/30151a39f7570f448ed84529390628a651d7f27c87d73c9b887f8189695e/docutils-0.23-py3-none-any.whl", hash = "sha256:25d013af9bf23bc1c7b2b093dff4208166c53a94786c9e447808335ef1185fea", size = 634701, upload-time = "2026-05-27T17:40:58.442Z" },
+]
+
+[[package]]
 name = "fastjsonschema"
 version = "2.21.2"
 source = { registry = "https://pypi.org/simple" }
@@ -86,6 +95,7 @@ dependencies = [
     { name = "nbformat" },
     { name = "pytest" },
     { name = "pyyaml" },
+    { name = "rst2gfm" },
 ]
 
 [package.metadata]
@@ -93,6 +103,7 @@ requires-dist = [
     { name = "nbformat", specifier = ">=5.0" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pyyaml", specifier = ">=6.0" },
+    { name = "rst2gfm", specifier = ">=0.1.2" },
 ]
 
 [[package]]
@@ -330,6 +341,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/77/65/38ab2f90df44c2febfb63cc10ced40763d9b4bc94d173e734528663fe7f5/rpds_py-2026.5.1-cp315-cp315t-musllinux_1_2_x86_64.whl", hash = "sha256:b1be5c35683684d5331b93600c210e8367c254683d8a6df6bd21bd2da3a334fb", size = 581839, upload-time = "2026-05-28T12:01:48.109Z" },
     { url = "https://files.pythonhosted.org/packages/15/2d/ce1f605fe036aadd460e5822e578c6c7ec3a860936cca37d6e0f299daa77/rpds_py-2026.5.1-cp315-cp315t-win32.whl", hash = "sha256:75808f6c38ce7749bb68cc2770161aae5045e6c6f6781a9782e74b93304399df", size = 207866, upload-time = "2026-05-28T12:01:49.648Z" },
     { url = "https://files.pythonhosted.org/packages/79/cb/966040123eb102371559746908ef2c9471f4d43e17ec9a645a2258dab64b/rpds_py-2026.5.1-cp315-cp315t-win_amd64.whl", hash = "sha256:90bd6630002a1c7f09e7843dd79f0d24f3d2897cc25a753480917865d14f15b3", size = 225441, upload-time = "2026-05-28T12:01:51.408Z" },
+]
+
+[[package]]
+name = "rst2gfm"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "docutils" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b3/33/d9797e283183fcd0a8186cbf09b5e809205900487c855201d0d9aa3212e6/rst2gfm-0.1.2.tar.gz", hash = "sha256:ea7525345ccdeba1262f695c6ccf11506ffafe94a101271d4ffab91de9c20bfd", size = 12141, upload-time = "2025-03-01T16:35:14.61Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/59/1d/07ddcd5453fe8fe9e4b3d3b3b40493455e4e6681f9dadd33a538ac30fbb2/rst2gfm-0.1.2-py3-none-any.whl", hash = "sha256:a7ea1c7945aa029c8ef119f86f1e4d96de01894664609d06605162624327099c", size = 9664, upload-time = "2025-03-01T16:35:13.176Z" },
 ]
 
 [[package]]
