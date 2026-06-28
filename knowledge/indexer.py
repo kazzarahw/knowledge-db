@@ -148,7 +148,7 @@ def _fts5_sync_sections(
     rank_bias: float | None = None,
     content_hashes_seen: set[str] | None = None,
     source_title: str = "",
-) -> None:
+) -> int:
     """Insert sections with content hashing and source-quality bias.
 
     Args:
@@ -177,7 +177,7 @@ def _fts5_sync_sections(
     conn.execute("DELETE FROM sections WHERE source = ?", (source_name,))
 
     if not sections:
-        return
+        return 0
 
     sections = _deduplicate_sections(sections)
 
@@ -205,7 +205,7 @@ def _fts5_sync_sections(
         )
 
     if not to_insert:
-        return
+        return 0
 
     conn.executemany(
         "INSERT INTO sections "
@@ -230,6 +230,8 @@ def _fts5_sync_sections(
         "INSERT INTO sections_fts_title(rowid, title, heading_path) VALUES (?, ?, ?)",
         [(rowid, title, hpath) for rowid, title, hpath, _ in fts_tuples],
     )
+
+    return len(to_insert)
 
 
 def _index_source(
@@ -284,7 +286,7 @@ def _index_source(
             continue
 
     rb = _lookup_rank_bias(source.category)
-    _fts5_sync_sections(
+    inserted = _fts5_sync_sections(
         conn,
         source.name,
         all_sections,
@@ -314,7 +316,7 @@ def _index_source(
         (source.name, current_head),
     )
 
-    return len(all_sections)
+    return inserted
 
 
 def cmd_index(
@@ -349,17 +351,20 @@ def cmd_index(
 
     content_hashes_seen: set[str] = set()
 
-    null_hashes = conn.execute(
-        "SELECT COUNT(*) FROM sections WHERE content_hash IS NULL"
-    ).fetchone()[0]
-    if null_hashes > 0:
-        print(f"  {null_hashes} sections missing content_hash — rebuilding all sources")
-        conn.execute("BEGIN")
-        conn.execute("DELETE FROM source_state")
-        conn.execute("DELETE FROM sections_fts")
-        conn.execute("DELETE FROM sections_fts_title")
-        conn.execute("DELETE FROM sections")
-        conn.commit()
+    if not force:
+        null_hashes = conn.execute(
+            "SELECT COUNT(*) FROM sections WHERE content_hash IS NULL"
+        ).fetchone()[0]
+        if null_hashes > 0:
+            print(
+                f"  {null_hashes} sections missing content_hash — rebuilding all sources"
+            )
+            conn.execute("BEGIN")
+            conn.execute("DELETE FROM source_state")
+            conn.execute("DELETE FROM sections_fts")
+            conn.execute("DELETE FROM sections_fts_title")
+            conn.execute("DELETE FROM sections")
+            conn.commit()
 
     if force:
         conn.executescript("DROP TABLE IF EXISTS sections_fts_title")

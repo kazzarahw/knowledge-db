@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import sqlite3
 
 from knowledge.db import ensure_schema, get_connection
 from knowledge.indexer import _fts5_sync_sections
