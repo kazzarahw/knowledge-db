@@ -388,3 +388,79 @@ class TestSearchExecution:
         results = cmd_search("/etc/nginx/", config_dir=str(tmp_path))
         assert len(results) >= 1
         assert results[0]["source"] == "test"
+
+    def test_rank_bias_boosts_wiki_sources(self, tmp_path: Path) -> None:
+        from knowledge.config import ensure_data_dir, resolve_data_dir
+        from knowledge.db import ensure_schema, get_connection, _migrate_schema
+        from knowledge.search import cmd_search
+
+        data_dir = ensure_data_dir(resolve_data_dir(str(tmp_path)))
+        db_path = data_dir / "index.db"
+        conn = get_connection(db_path)
+        ensure_schema(conn)
+        _migrate_schema(conn)
+
+        for i in range(5):
+            conn.execute(
+                "INSERT INTO sections (source, title, category, path, heading_path, body, "
+                "content_hash, rank_bias, source_title) "
+                "VALUES ('filler', ?, 'filler', ?, '', ?, ?, 1.0, '')",
+                (f"filler-{i}", f"f{i}.md", f"filler-{i} body", f"fff{i}"),
+            )
+            r = conn.execute(
+                "SELECT id FROM sections WHERE source='filler' AND path=?",
+                (f"f{i}.md",),
+            ).fetchone()[0]
+            conn.execute(
+                "INSERT INTO sections_fts(rowid, title, heading_path, body) VALUES (?, ?, ?, ?)",
+                (r, f"filler-{i}", "", f"filler-{i} body"),
+            )
+            conn.execute(
+                "INSERT INTO sections_fts_title(rowid, title, heading_path) VALUES (?, ?, ?)",
+                (r, f"filler-{i}", ""),
+            )
+
+        body = "word document exploit macro"
+        conn.execute(
+            "INSERT INTO sections (source, title, category, path, heading_path, body, "
+            "content_hash, rank_bias, source_title) "
+            "VALUES ('hacktricks', 'doc', 'wikis', 'a.md', '', ?, "
+            "'aaa', 0.7, 'HackTricks')",
+            (body,),
+        )
+        conn.execute(
+            "INSERT INTO sections (source, title, category, path, heading_path, body, "
+            "content_hash, rank_bias, source_title) "
+            "VALUES ('osint-src', 'doc', 'osint', 'b.md', '', ?, "
+            "'bbb', 1.0, 'OSINT Source')",
+            (body,),
+        )
+
+        row1 = conn.execute(
+            "SELECT id FROM sections WHERE source='hacktricks'"
+        ).fetchone()[0]
+        row2 = conn.execute(
+            "SELECT id FROM sections WHERE source='osint-src'"
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO sections_fts(rowid, title, heading_path, body) VALUES (?, ?, ?, ?)",
+            (row1, "doc", "", body),
+        )
+        conn.execute(
+            "INSERT INTO sections_fts(rowid, title, heading_path, body) VALUES (?, ?, ?, ?)",
+            (row2, "doc", "", body),
+        )
+        conn.execute(
+            "INSERT INTO sections_fts_title(rowid, title, heading_path) VALUES (?, ?, ?)",
+            (row1, "doc", ""),
+        )
+        conn.execute(
+            "INSERT INTO sections_fts_title(rowid, title, heading_path) VALUES (?, ?, ?)",
+            (row2, "doc", ""),
+        )
+        conn.commit()
+        conn.close()
+
+        results = cmd_search("word exploit", top_k=10, config_dir=str(tmp_path))
+        assert len(results) >= 2
+        assert results[0]["source"] == "hacktricks"

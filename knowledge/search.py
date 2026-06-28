@@ -214,6 +214,20 @@ def cmd_search(
             print("Error: No index found. Run 'kdb index' first.", file=sys.stderr)
             return []
 
+        from knowledge.db import _migrate_schema
+
+        msgs = _migrate_schema(conn)
+        if msgs:
+            null_hash = conn.execute(
+                "SELECT COUNT(*) FROM sections WHERE content_hash IS NULL"
+            ).fetchone()[0]
+            if null_hash:
+                print(
+                    "Info: Index needs rebuild to populate new columns."
+                    " Run 'kdb index --force'.",
+                    file=sys.stderr,
+                )
+
         tier = _classify_query(query)
         fts_table = _select_fts_table(tier)
         fts_query = _build_fts5_query(query, tier)
@@ -235,7 +249,7 @@ def cmd_search(
             JOIN sections s ON s.id = f.rowid
             WHERE {fts_table} MATCH ?
               {source_filter}
-            ORDER BY {bm25_order}
+            ORDER BY {bm25_order} / s.rank_bias
             LIMIT ?
         """
         try:
