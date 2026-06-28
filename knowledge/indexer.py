@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import signal
 import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from types import FrameType
+
+logger = logging.getLogger(__name__)
 
 from knowledge.chunk import Section, chunk_file
 from knowledge.config import (
@@ -108,23 +111,59 @@ def _deduplicate_sections(sections: list[Section]) -> list[Section]:
     return result
 
 
+_RANK_BIAS_MAP: dict[str, float] = {
+    "wikis": 0.7,
+    "ad-internal": 0.8,
+    "web-api": 0.8,
+    "dfir": 0.9,
+    "wifi": 0.9,
+    "bluetooth": 0.9,
+    "c2": 1.0,
+    "hardware-iot": 1.0,
+    "mobile": 1.0,
+    "lotl": 1.0,
+    "re-books": 1.0,
+    "re-tools": 1.0,
+    "re-indexes": 1.0,
+    "osint": 1.0,
+    "glitching": 1.0,
+    "sdr": 1.0,
+    "firmware": 1.1,
+    "compliance": 1.1,
+}
+
+
+def _lookup_rank_bias(category: str) -> float:
+    """Return rank_bias for a category, defaulting to 1.0."""
+    if not category:
+        logger.debug("Empty category, using default rank_bias=1.0")
+        return 1.0
+    return _RANK_BIAS_MAP.get(category, 1.0)
+
+
 def _fts5_sync_sections(
     conn: sqlite3.Connection,
     source_name: str,
     sections: list[Section],
+    rank_bias: float | None = None,
+    content_hashes_seen: set[str] | None = None,
+    source_title: str = "",
 ) -> None:
-    """Insert sections and sync FTS5 indexes within an active transaction.
-
-    Phase 1: Delete old FTS5 entries for this source (must precede section delete).
-    Phase 2: Delete old sections for this source.
-    Phase 3: Insert new sections.
-    Phase 4: Insert into FTS5 tables with matching rowids.
+    """Insert sections with content hashing and source-quality bias.
 
     Args:
         conn: Open database connection (in transaction).
         source_name: Source name to re-index.
         sections: List of Section dataclass instances to insert.
+        rank_bias: Pre-computed rank bias. Falls back to
+            _lookup_rank_bias(sections[0].category) if None.
+        content_hashes_seen: Set of content hashes already inserted
+            (cross-source dedup). Passed by caller for cumulative tracking.
+        source_title: Human-readable source title (shared by all sections).
     """
+    if content_hashes_seen is None:
+        content_hashes_seen = set()
+
     conn.execute(
         "DELETE FROM sections_fts WHERE rowid IN "
         "(SELECT id FROM sections WHERE source = ?)",
@@ -135,7 +174,6 @@ def _fts5_sync_sections(
         "(SELECT id FROM sections WHERE source = ?)",
         (source_name,),
     )
-
     conn.execute("DELETE FROM sections WHERE source = ?", (source_name,))
 
     if not sections:
@@ -143,14 +181,38 @@ def _fts5_sync_sections(
 
     sections = _deduplicate_sections(sections)
 
-    section_tuples = [
-        (s.source, s.title, s.category, s.path, s.heading_path, s.body)
-        for s in sections
-    ]
+    if rank_bias is None:
+        rank_bias = _lookup_rank_bias(sections[0].category)
+
+    to_insert: list[tuple[str, float, str, str, str, str, str, str, str]] = []
+    for s in sections:
+        h = hashlib.sha256(s.body.encode()).hexdigest()
+        if h in content_hashes_seen:
+            continue
+        content_hashes_seen.add(h)
+        to_insert.append(
+            (
+                h,
+                rank_bias,
+                s.source,
+                s.title,
+                s.category,
+                s.path,
+                s.heading_path,
+                s.body,
+                source_title,
+            )
+        )
+
+    if not to_insert:
+        return
+
     conn.executemany(
-        "INSERT INTO sections (source, title, category, path, heading_path, body) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        section_tuples,
+        "INSERT INTO sections "
+        "(content_hash, rank_bias, source, title, category, path, "
+        "heading_path, body, source_title) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        to_insert,
     )
 
     sec_ids = conn.execute(
@@ -158,21 +220,15 @@ def _fts5_sync_sections(
         (source_name,),
     ).fetchall()
 
-    fts_tuples = [
-        (row_id[0], s.title, s.heading_path, s.body)
-        for row_id, s in zip(sec_ids, sections)
-    ]
+    fts_tuples = [(sec_ids[i][0], t[3], t[6], t[7]) for i, t in enumerate(to_insert)]
     conn.executemany(
         "INSERT INTO sections_fts(rowid, title, heading_path, body) "
         "VALUES (?, ?, ?, ?)",
         fts_tuples,
     )
-    fts_title_tuples = [
-        (row_id[0], s.title, s.heading_path) for row_id, s in zip(sec_ids, sections)
-    ]
     conn.executemany(
         "INSERT INTO sections_fts_title(rowid, title, heading_path) VALUES (?, ?, ?)",
-        fts_title_tuples,
+        [(rowid, title, hpath) for rowid, title, hpath, _ in fts_tuples],
     )
 
 
@@ -183,6 +239,7 @@ def _index_source(
     verbose: bool,
     current_head: str | None = None,
     cfg: Config | None = None,
+    content_hashes_seen: set[str] | None = None,
 ) -> int:
     """Index a single source: walk, chunk, and store via FTS5.
 
@@ -226,7 +283,15 @@ def _index_source(
                 print(f"    Warning: error processing {fpath}: {e}")
             continue
 
-    _fts5_sync_sections(conn, source.name, all_sections)
+    rb = _lookup_rank_bias(source.category)
+    _fts5_sync_sections(
+        conn,
+        source.name,
+        all_sections,
+        rank_bias=rb,
+        content_hashes_seen=content_hashes_seen,
+        source_title=source.title or source.name,
+    )
 
     if not all_sections:
         if current_head is not None:
@@ -275,6 +340,26 @@ def cmd_index(
     conn = get_connection(db_path)
 
     ensure_schema(conn)
+
+    from knowledge.db import _migrate_schema
+
+    msgs = _migrate_schema(conn)
+    for m in msgs:
+        print(f"  Schema migration: {m}")
+
+    content_hashes_seen: set[str] = set()
+
+    null_hashes = conn.execute(
+        "SELECT COUNT(*) FROM sections WHERE content_hash IS NULL"
+    ).fetchone()[0]
+    if null_hashes > 0:
+        print(f"  {null_hashes} sections missing content_hash — rebuilding all sources")
+        conn.execute("BEGIN")
+        conn.execute("DELETE FROM source_state")
+        conn.execute("DELETE FROM sections_fts")
+        conn.execute("DELETE FROM sections_fts_title")
+        conn.execute("DELETE FROM sections")
+        conn.commit()
 
     if force:
         conn.executescript("DROP TABLE IF EXISTS sections_fts_title")
@@ -341,6 +426,7 @@ def cmd_index(
                     verbose,
                     current_head=current_head,
                     cfg=cfg,
+                    content_hashes_seen=content_hashes_seen,
                 )
                 conn.commit()
                 if verbose:
