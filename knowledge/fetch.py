@@ -96,6 +96,7 @@ def fetch_sources(
             continue
         if src.source_type == "local":
             continue
+        print(f"  {src.name}...", flush=True)
         if _fetch_git_source(src, data_dir, verbose, git_timeout):
             changed.append(src.name)
     return changed

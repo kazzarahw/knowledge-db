@@ -10,9 +10,7 @@ from typing import Any
 import yaml
 from yaml import YAMLError
 
-
-class ConfigError(ValueError):
-    """Configuration error — invalid or missing source config."""
+from knowledge.config import ConfigError
 
 
 _GIT_URL_RE = re.compile(r"^(https?://|git@|ssh://git@)[\w.:/@-]+(?:\.git)?/?$")

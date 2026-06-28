@@ -12,6 +12,10 @@ APP_NAME = "knowledge-db"
 DATA_DIR_ENV_VAR = "KNOWLEDGE_DB_DIR"
 
 
+class ConfigError(Exception):
+    """Configuration error — invalid or missing config."""
+
+
 @dataclass(frozen=True, slots=True)
 class FetchConfig:
     git_timeout: int = 300
@@ -134,7 +138,10 @@ def resolve_data_dir(override: str | None = None) -> Path:
 
 def ensure_data_dir(data_dir: Path) -> Path:
     """Create data directory and subdirs if they don't exist."""
-    (data_dir / "sources").mkdir(parents=True, exist_ok=True)
+    try:
+        (data_dir / "sources").mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise ConfigError(f"Cannot create data directory at {data_dir}: {e}")
     return data_dir
 
 

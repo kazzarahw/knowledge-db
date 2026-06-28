@@ -67,6 +67,47 @@ def _walk_files(
     return sorted(files)
 
 
+def _deduplicate_sections(sections: list[Section]) -> list[Section]:
+    """Merge sections with duplicate (source, path, heading_path) keys.
+
+    Bodies are joined with ``\\n\\n---\\n\\n``. Keeps the first occurrence's
+    title and other metadata. Preserves original order.
+
+    Args:
+        sections: List of Section instances to deduplicate.
+
+    Returns:
+        Deduplicated list preserving insertion order.
+    """
+    seen: dict[tuple[str, str, str], Section] = {}
+    merged: dict[tuple[str, str, str], list[str]] = {}
+    order: list[tuple[str, str, str]] = []
+
+    for s in sections:
+        key = (s.source, s.path, s.heading_path)
+        if key not in seen:
+            seen[key] = s
+            merged[key] = [s.body]
+            order.append(key)
+        else:
+            merged[key].append(s.body)
+
+    result: list[Section] = []
+    for key in order:
+        s = seen[key]
+        result.append(
+            Section(
+                source=s.source,
+                title=s.title,
+                category=s.category,
+                path=s.path,
+                heading_path=s.heading_path,
+                body="\n\n---\n\n".join(merged[key]),
+            )
+        )
+    return result
+
+
 def _fts5_sync_sections(
     conn: sqlite3.Connection,
     source_name: str,
@@ -99,6 +140,8 @@ def _fts5_sync_sections(
 
     if not sections:
         return
+
+    sections = _deduplicate_sections(sections)
 
     section_tuples = [
         (s.source, s.title, s.category, s.path, s.heading_path, s.body)
@@ -341,5 +384,8 @@ def cmd_index(
                 f"Index complete with {source_failures} source(s) failed.",
                 file=sys.stderr,
             )
+
+        if source_failures > 0:
+            sys.exit(1)
     finally:
         signal.signal(signal.SIGINT, old_handler)

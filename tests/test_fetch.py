@@ -35,6 +35,25 @@ def test_fetch_sources_filters_by_only(tmp_path):
     assert result == []
 
 
+def test_fetch_progress_output(tmp_path, capsys):
+    """Progress prints for each git source during fetch."""
+    src1 = Source(name="hacktricks", source_type="git", url="https://example.com/a")
+    src2 = Source(
+        name="payloadsallthethings",
+        source_type="git",
+        url="https://example.com/b",
+    )
+
+    from unittest.mock import patch
+
+    with patch("knowledge.fetch._fetch_git_source", return_value=False):
+        fetch_sources([src1, src2], tmp_path, verbose=False)
+
+    captured = capsys.readouterr()
+    assert "  hacktricks...\n" in captured.out
+    assert "  payloadsallthethings...\n" in captured.out
+
+
 def test_clone_invalid_url(tmp_path):
     """Cloning a bad URL returns False."""
     from knowledge.fetch import _clone_source

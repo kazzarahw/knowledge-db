@@ -8,6 +8,8 @@ from pathlib import Path
 
 import nbformat
 
+HEADING_AWARE_EXTS: set[str] = {".md", ".markdown", ".mdx", ".rst", ".ipynb"}
+
 
 @dataclass(frozen=True, slots=True)
 class Section:
@@ -28,6 +30,7 @@ def chunk_file(
 
     Handles plain text, markdown, reStructuredText, and Jupyter notebooks.
     Notebooks are converted to text before chunking.
+    Heading detection is only enabled for extensions in ``HEADING_AWARE_EXTS``.
 
     Args:
         filepath: Path to the file to chunk.
@@ -43,10 +46,23 @@ def chunk_file(
         text = _convert_notebook(filepath)
     else:
         text = filepath.read_text(encoding="utf-8", errors="replace")
-    return chunk_text(text, source, category, rel_path or str(filepath))
+    detect_headings = ext in HEADING_AWARE_EXTS
+    return chunk_text(
+        text,
+        source,
+        category,
+        rel_path or str(filepath),
+        detect_headings=detect_headings,
+    )
 
 
-def chunk_text(text: str, source: str, category: str, rel_path: str) -> list[Section]:
+def chunk_text(
+    text: str,
+    source: str,
+    category: str,
+    rel_path: str,
+    detect_headings: bool = True,
+) -> list[Section]:
     """Split a text string into heading-bounded Section instances.
 
     Scans for ATX (``# heading``) and setext (underlined) headings,
@@ -57,6 +73,8 @@ def chunk_text(text: str, source: str, category: str, rel_path: str) -> list[Sec
         source: Source name for metadata.
         category: Source category for metadata.
         rel_path: Relative file path for metadata.
+        detect_headings: Enable ATX and setext heading detection.
+            When ``False``, the entire document is returned as a single section.
 
     Returns:
         List of Section dataclass instances. Returns a single Section with
@@ -64,7 +82,7 @@ def chunk_text(text: str, source: str, category: str, rel_path: str) -> list[Sec
     """
     text = re.sub(r"^\ufeff?---+\s*\n.*?\n---+[ \t]*", "", text, flags=re.DOTALL)
     lines = text.splitlines()
-    boundaries = _scan_headings(lines)
+    boundaries = _scan_headings(lines) if detect_headings else []
 
     stem = Path(rel_path).stem
     fallback_title = stem.replace("-", " ").replace("_", " ").replace(".", " ")

@@ -131,6 +131,14 @@ def test_ensure_data_dir_idempotent(tmp_path: Path) -> None:
     ensure_data_dir(tmp_path)  # second call should not raise
 
 
+def test_ensure_data_dir_raises_on_invalid_path() -> None:
+    """Unwritable path raises ConfigError, not raw OSError."""
+    from knowledge.config import ConfigError
+
+    with pytest.raises(ConfigError):
+        ensure_data_dir(Path("/nonexistent-deeply/nested/path"))
+
+
 @pytest.mark.parametrize(
     "d,key,typ,default,expected",
     [

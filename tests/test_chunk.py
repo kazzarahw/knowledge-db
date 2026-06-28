@@ -99,6 +99,21 @@ class TestChunkText:
         assert "Body text after frontmatter" in sections[0].body
         assert sections[1].title == "Real Heading"
 
+    def test_chunk_text_detect_headings_false(self):
+        md_with_headings = "# Heading\nBody.\n\n## Subheading\nMore."
+        sections = chunk_text(
+            md_with_headings, "test", "wikis", "test.md", detect_headings=False
+        )
+        assert len(sections) == 1
+        assert "Body." in sections[0].body
+
+    def test_markdown_duplicate_headings_hierarchy(self):
+        md = "# A\nContent\n\n## A\nMore"
+        sections = chunk_text(md, "test", "wikis", "dup.md")
+        assert len(sections) == 2
+        assert sections[0].heading_path == "A"
+        assert sections[1].heading_path == "A > A"
+
 
 class TestChunkFile:
     def test_file_read(self, tmp_path):
@@ -108,6 +123,15 @@ class TestChunkFile:
         assert len(sections) == 1
         assert sections[0].title == "Hello"
         assert "World" in sections[0].body
+
+    def test_python_file_no_heading_detection(self, tmp_path):
+        f = tmp_path / "script.py"
+        f.write_text(
+            "# patch rom\n# 4-byte align\nimport os\n\ndef main():\n    pass\n"
+        )
+        sections = chunk_file(f, "test", "wikis", "script.py")
+        assert len(sections) == 1
+        assert "# patch rom" in sections[0].body
 
     def test_notebook_conversion(self, tmp_path):
         import nbformat as nbf

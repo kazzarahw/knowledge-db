@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from knowledge.chunk import chunk_text
 
 
@@ -178,3 +179,91 @@ def test_cmd_index_force_rebuild(tmp_path: Path, monkeypatch) -> None:
     assert stale is not None
     assert stale[0] != "stale"
     conn2.close()
+
+
+def test_fts5_sync_sections_dedup(tmp_path: Path) -> None:
+    """_fts5_sync_sections deduplicates sections with same (source, path, heading_path)."""
+    from knowledge.db import get_connection, ensure_schema
+    from knowledge.indexer import _fts5_sync_sections
+    from knowledge.chunk import Section
+
+    db_path = tmp_path / "test.db"
+    conn = get_connection(db_path)
+    ensure_schema(conn)
+
+    sections = [
+        Section(
+            source="test",
+            title="H1",
+            category="cat",
+            path="doc.md",
+            heading_path="H1",
+            body="First body.",
+        ),
+        Section(
+            source="test",
+            title="H1",
+            category="cat",
+            path="doc.md",
+            heading_path="H1",
+            body="Second body.",
+        ),
+        Section(
+            source="test",
+            title="H2",
+            category="cat",
+            path="doc.md",
+            heading_path="H2",
+            body="Third body.",
+        ),
+    ]
+
+    try:
+        conn.execute("BEGIN")
+        _fts5_sync_sections(conn, "test", sections)
+        conn.commit()
+    finally:
+        conn.close()
+
+    conn2 = get_connection(db_path)
+    try:
+        rows = conn2.execute(
+            "SELECT heading_path, body FROM sections ORDER BY id"
+        ).fetchall()
+        assert len(rows) == 2, f"Expected 2 rows, got {len(rows)}"
+        assert rows[0]["heading_path"] == "H1"
+        assert rows[1]["heading_path"] == "H2"
+        merged_body = rows[0]["body"]
+        assert merged_body == "First body.\n\n---\n\nSecond body.", (
+            f"Unexpected merged body: {merged_body!r}"
+        )
+        fts_rows = conn2.execute(
+            "SELECT heading_path, body FROM sections_fts ORDER BY rowid"
+        ).fetchall()
+        assert len(fts_rows) == 2
+    finally:
+        conn2.close()
+
+
+def test_cmd_index_failure_exit_code(tmp_path: Path, monkeypatch) -> None:
+    """cmd_index exits with code 1 when source indexing fails."""
+    from knowledge.indexer import cmd_index
+
+    sources_yml = tmp_path / "sources.yaml"
+    sources_yml.write_text(
+        "sources:\n  - name: fail-src\n    type: local\n    path: /tmp/dummy\n"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    (tmp_path / "sources" / "fail-src").mkdir(parents=True)
+
+    import knowledge.indexer as _idx
+
+    def _mock_walk_files(*args: object, **kwargs: object) -> list[object]:
+        raise RuntimeError("Simulated failure")
+
+    monkeypatch.setattr(_idx, "_walk_files", _mock_walk_files)
+
+    with pytest.raises(SystemExit) as exc_info:
+        cmd_index(config_dir=str(tmp_path), force=False, verbose=False)
+    assert exc_info.value.code == 1
