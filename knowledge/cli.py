@@ -15,6 +15,17 @@ from knowledge.config import (
 )
 
 
+def _validate_hex_prefix(value: str) -> str:
+    """Argparse type validator for hash prefix arguments."""
+    if not all(c in "0123456789abcdef" for c in value.lower()):
+        raise argparse.ArgumentTypeError("hash prefix must be hex characters only")
+    if len(value) < 10:
+        raise argparse.ArgumentTypeError(
+            "hash prefix must be at least 10 hex characters"
+        )
+    return value.lower()
+
+
 def _add_global_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-v", "--verbose", action="store_true", help="verbose output")
     parser.add_argument("-c", "--config", help="path to config directory")
@@ -51,7 +62,27 @@ def _build_parser() -> argparse.ArgumentParser:
     p_list = sub.add_parser("list-sources", help="list all configured sources")
     _add_global_args(p_list)
 
+    p_get = sub.add_parser("get", help="Retrieve a section by content hash prefix")
+    _add_global_args(p_get)
+    p_get.add_argument(
+        "hash_prefix", type=_validate_hex_prefix, help="Hash prefix (min 10 hex chars)"
+    )
+    p_get.add_argument("--json", action="store_true", help="JSON output")
+
     return parser
+
+
+def _print_get_result(result: dict) -> None:
+    """Print a formatted section result for ``kdb get``."""
+    print(f"Hash:\t\t{result['hash']}")
+    print(f"Source:\t\t{result['source']}")
+    print(f"Title:\t\t{result['title']}")
+    print(f"Category:\t{result['category']}")
+    print(f"Path:\t\t{result['path']}")
+    print(f"Heading:\t{result['heading_path']}")
+    print()
+    print("--- Content ---")
+    print(result["body"])
 
 
 def main() -> None:
@@ -168,6 +199,17 @@ def main() -> None:
                         f"{s.name[:32]:<34} {s.title[:48]:<50} {s.category[:8]:<10} "
                         f"{s.source_type:<8} {st:<12}"
                     )
+
+            case "get":
+                from knowledge.getter import cmd_get
+
+                result = cmd_get(args.hash_prefix, config_dir=args.config)
+                if result is None:
+                    sys.exit(1)
+                if args.json:
+                    print(json.dumps(result, indent=2, ensure_ascii=False))
+                else:
+                    _print_get_result(result)
 
             case _:
                 print(f"Error: unknown command '{args.command}'", file=sys.stderr)
