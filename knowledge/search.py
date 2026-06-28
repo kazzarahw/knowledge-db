@@ -9,7 +9,7 @@ from enum import StrEnum
 from typing import TypedDict
 
 from knowledge.config import resolve_data_dir
-from knowledge.db import _migrate_schema, get_connection
+from knowledge.db import get_connection
 
 
 class QueryTier(StrEnum):
@@ -215,18 +215,6 @@ def cmd_search(
         if not has_sections:
             print("Error: No index found. Run 'kdb index' first.", file=sys.stderr)
             return []
-
-        msgs = _migrate_schema(conn)
-        if msgs:
-            null_hash = conn.execute(
-                "SELECT COUNT(*) FROM sections WHERE content_hash IS NULL"
-            ).fetchone()[0]
-            if null_hash:
-                print(
-                    "Info: Index needs rebuild to populate new columns."
-                    " Run 'kdb index --force'.",
-                    file=sys.stderr,
-                )
 
         tier = _classify_query(query)
         fts_table = _select_fts_table(tier)

@@ -11,8 +11,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import FrameType
 
-logger = logging.getLogger(__name__)
-
 from knowledge.chunk import Section, chunk_file
 from knowledge.config import (
     Config,
@@ -24,6 +22,8 @@ from knowledge.config import (
 from knowledge.db import get_connection, ensure_schema
 from knowledge.fetch import get_git_head
 from knowledge.sources import Source, load_sources
+
+logger = logging.getLogger(__name__)
 
 
 def _source_signature(source_dir: Path) -> str | None:
@@ -220,6 +220,9 @@ def _fts5_sync_sections(
         (source_name,),
     ).fetchall()
 
+    # to_insert tuple: (content_hash, rank_bias, source, title, category,
+    #                    path, heading_path, body, source_title)
+    #                                    t[3]=title  t[6]=heading_path  t[7]=body
     fts_tuples = [(sec_ids[i][0], t[3], t[6], t[7]) for i, t in enumerate(to_insert)]
     conn.executemany(
         "INSERT INTO sections_fts(rowid, title, heading_path, body) "

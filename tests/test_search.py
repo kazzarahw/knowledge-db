@@ -108,12 +108,14 @@ class TestSearchExecution:
         """SearchResult includes distance field for JSON backward compat."""
         r = SearchResult(
             source="test",
+            source_title="",
             title="Test",
             category="e2e",
             path="t.md",
             heading_path="",
             body="body",
             distance=0.0,
+            content_hash="",
         )
         assert "distance" in r
         assert isinstance(r["distance"], float)

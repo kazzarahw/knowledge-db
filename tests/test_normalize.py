@@ -114,3 +114,15 @@ def test_qualify_heading_default_is_top_level() -> None:
 
     result = qualify_heading("HackTricks", "Token Confusion")
     assert result == "HackTricks: Token Confusion"
+
+
+def test_chunk_file_normalizes_rst(tmp_path) -> None:
+    """chunk_file produces normalized body for .rst files."""
+    from knowledge.chunk import chunk_file
+
+    f = tmp_path / "test.rst"
+    f.write_text("Hello\n=====\n\nSome **bold** text.")
+    sections = chunk_file(f, "testsource", "wikis", rel_path="test.rst")
+    assert len(sections) == 1
+    assert sections[0].title == "Hello"
+    assert sections[0].body == "Some **bold** text."

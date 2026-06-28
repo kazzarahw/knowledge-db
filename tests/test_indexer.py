@@ -45,7 +45,7 @@ def test_index_source_inserts_sections(tmp_path: Path) -> None:
                 body="Body text.",
             ),
         ]
-        mock_chunk.side_effect = lambda fpath, src, cat, rel_path: sections
+        mock_chunk.side_effect = lambda fpath, src, cat, rel_path, **kw: sections
         mock_cfg.return_value = MagicMock()
 
         count = _index_source(source, conn, tmp_path, verbose=False)

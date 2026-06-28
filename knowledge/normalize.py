@@ -46,6 +46,7 @@ def normalize_body(path: Path, file_ext: str) -> str | None:
         Normalized markdown text, or ``None`` if the file should be skipped
         (corrupt notebook). On other conversion failures, returns original text.
     """
+    raw = path.read_text(encoding="utf-8", errors="replace")
     try:
         match file_ext:
             case ".ipynb":
@@ -53,10 +54,10 @@ def normalize_body(path: Path, file_ext: str) -> str | None:
             case ".rst":
                 return _rst_to_md(path)
             case _:
-                return path.read_text(encoding="utf-8", errors="replace")
+                return raw
     except Exception:
         logger.warning("normalize_body failed for %s, using original", path)
-        return path.read_text(encoding="utf-8", errors="replace")
+        return raw
 
 
 def _notebook_to_md(path: Path) -> str | None:

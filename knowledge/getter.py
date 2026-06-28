@@ -23,6 +23,8 @@ def cmd_get(
         heading_path, body, or None if no/ambiguous match.
     """
     hash_prefix = hash_prefix.lower().strip()
+    # Duplicate of cli._validate_hex_prefix — serves as defense-in-depth
+    # for programmatic callers that bypass argparse.
     if not all(c in "0123456789abcdef" for c in hash_prefix):
         print("Error: hash prefix must be hex characters only", file=sys.stderr)
         return None
@@ -61,7 +63,7 @@ def cmd_get(
 
         row = rows[0]
         return {
-            "hash": row["content_hash"],
+            "content_hash": row["content_hash"],
             "source": row["source"],
             "title": row["title"],
             "category": row["category"],
