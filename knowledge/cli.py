@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -70,6 +71,57 @@ def _build_parser() -> argparse.ArgumentParser:
     p_get.add_argument("--json", action="store_true", help="JSON output")
 
     return parser
+
+
+def _truncate(text: str, max_len: int) -> str:
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1] + "…"
+
+
+def _format_search_results(results: list[dict]) -> str | None:
+    if not results:
+        return None
+
+    term_width = shutil.get_terminal_size((80, 20)).columns
+    content_width = int(term_width * 0.85)
+
+    hash_w = 12
+    dist_w = 9
+    remaining = content_width - hash_w - dist_w
+    tag_w = int(remaining * 0.35)
+    title_w = remaining - tag_w
+
+    lines: list[str] = []
+
+    if term_width < 80:
+        lines.append(f"{'Hash':<14} {'Tag':<{tag_w}}")
+        lines.append("─" * (14 + tag_w + 2))
+        for r in results:
+            tag = f"{r['category']}·{r.get('source_title', r['source'])}"
+            h = r["content_hash"][:12] if r.get("content_hash") else "?" * 12
+            title = _truncate(r["title"], title_w)
+            dist = f"{r['distance']:.2f}"
+            lines.append(f"{h:<14} {_truncate(tag, tag_w):<{tag_w}}")
+            lines.append(f"{'':<14} {title:<{title_w}} {dist:>{dist_w}}")
+    else:
+        header = (
+            f"{'Hash':<{hash_w}} {'Tag':<{tag_w}} "
+            f"{'Title':<{title_w}} {'Distance':<{dist_w}}"
+        )
+        lines.append(header)
+        lines.append("─" * len(header))
+        for r in results:
+            tag = f"{r['category']}·{r.get('source_title', r['source'])}"
+            h = r["content_hash"][:12] if r.get("content_hash") else "?" * 12
+            title = _truncate(r["title"], title_w)
+            dist = f"{r['distance']:.2f}"
+            lines.append(
+                f"{h:<{hash_w}} {_truncate(tag, tag_w):<{tag_w}} "
+                f"{title:<{title_w}} {dist:>{dist_w}}"
+            )
+
+    return "\n".join(lines)
 
 
 def _print_get_result(result: dict) -> None:
@@ -163,15 +215,12 @@ def main() -> None:
                 if args.json:
                     print(json.dumps(results, indent=2, ensure_ascii=False))
                 elif results:
-                    header = f"{'Source':<16} {'Title':<25} {'Category':<10} {'Heading Path':<47} {'Distance':<8}"
-                    print(header)
-                    print("-" * len(header))
-                    for r in results:
-                        print(
-                            f"{r['source'][:14]:<16} {r['title'][:23]:<25} "
-                            f"{r['category'][:8]:<10} {r['heading_path'][:45]:<47} "
-                            f"{r['distance']:<8.4f}"
-                        )
+                    output = _format_search_results(results)
+                    if output:
+                        print(output)
+                    else:
+                        for r in results:
+                            print(f"{r['source']}: {r['title']} ({r['distance']:.2f})")
 
             case "list-sources":
                 from knowledge.sources import load_sources

@@ -112,12 +112,14 @@ class SearchResult(TypedDict):
     """
 
     source: str
+    source_title: str
     title: str
     category: str
     path: str
     heading_path: str
     body: str
     distance: float
+    content_hash: str
 
 
 def _select_fts_table(tier: QueryTier) -> str:
@@ -242,7 +244,8 @@ def cmd_search(
 
         sql = f"""
             SELECT s.source, s.title, s.category, s.path,
-                   s.heading_path, s.body, {bm25_select} as rank
+                   s.heading_path, s.body, s.content_hash, s.source_title,
+                   {bm25_select} as rank
             FROM {fts_table} f
             JOIN sections s ON s.id = f.rowid
             WHERE {fts_table} MATCH ?
@@ -268,12 +271,14 @@ def cmd_search(
             results.append(
                 SearchResult(
                     source=row["source"],
+                    source_title=row["source_title"],
                     title=row["title"],
                     category=row["category"],
                     path=row["path"],
                     heading_path=row["heading_path"],
                     body=row["body"],
                     distance=float(row["rank"]),
+                    content_hash=row["content_hash"],
                 )
             )
 
