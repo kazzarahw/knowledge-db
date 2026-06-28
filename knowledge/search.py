@@ -9,7 +9,7 @@ from enum import StrEnum
 from typing import TypedDict
 
 from knowledge.config import resolve_data_dir
-from knowledge.db import get_connection
+from knowledge.db import _migrate_schema, get_connection
 
 
 class QueryTier(StrEnum):
@@ -214,8 +214,6 @@ def cmd_search(
             print("Error: No index found. Run 'kdb index' first.", file=sys.stderr)
             return []
 
-        from knowledge.db import _migrate_schema
-
         msgs = _migrate_schema(conn)
         if msgs:
             null_hash = conn.execute(
@@ -249,6 +247,9 @@ def cmd_search(
             JOIN sections s ON s.id = f.rowid
             WHERE {fts_table} MATCH ?
               {source_filter}
+            -- Division (not multiplication): FTS5 bm25() can return negative values.
+            -- Dividing by rank_bias means boosted sources (lower rank_bias) produce
+            -- more negative scores → sort first with default ASC ordering.
             ORDER BY {bm25_order} / s.rank_bias
             LIMIT ?
         """
