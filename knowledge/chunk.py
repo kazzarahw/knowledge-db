@@ -24,35 +24,41 @@ class Section:
 
 
 def chunk_file(
-    filepath: Path, source: str, category: str, rel_path: str | None = None
+    filepath: Path,
+    source: str,
+    category: str,
+    rel_path: str | None = None,
+    source_title: str | None = None,
 ) -> list[Section]:
-    """Read a file and split it into heading-bounded sections.
+    """Read a file, normalize body, and split into heading-bounded sections.
 
-    Handles plain text, markdown, reStructuredText, and Jupyter notebooks.
-    Notebooks are converted to text before chunking.
-    Heading detection is only enabled for extensions in ``HEADING_AWARE_EXTS``.
+    Non-markdown formats (RST, notebooks) are converted to markdown
+    via ``normalize_body`` before chunking.
 
     Args:
         filepath: Path to the file to chunk.
         source: Source name for metadata.
         category: Source category for metadata.
         rel_path: Relative path for metadata. Defaults to str(filepath).
+        source_title: Human-readable source title for heading qualification.
 
     Returns:
         List of Section dataclass instances.
     """
+    from knowledge.normalize import normalize_body
+
     ext = filepath.suffix.lower()
-    if ext == ".ipynb":
-        text = _convert_notebook(filepath)
-    else:
-        text = filepath.read_text(encoding="utf-8", errors="replace")
+    normalized = normalize_body(filepath, ext)
+    if normalized is None:
+        return []
     detect_headings = ext in HEADING_AWARE_EXTS
     return chunk_text(
-        text,
+        normalized,
         source,
         category,
         rel_path or str(filepath),
         detect_headings=detect_headings,
+        source_title=source_title,
     )
 
 
@@ -62,11 +68,14 @@ def chunk_text(
     category: str,
     rel_path: str,
     detect_headings: bool = True,
+    source_title: str | None = None,
 ) -> list[Section]:
     """Split a text string into heading-bounded Section instances.
 
     Scans for ATX (``# heading``) and setext (underlined) headings,
     stripping frontmatter and respecting code-block fences.
+    Normalizes each heading segment and qualifies the first segment
+    with the source title when provided.
 
     Args:
         text: Document text content.
@@ -75,6 +84,7 @@ def chunk_text(
         rel_path: Relative file path for metadata.
         detect_headings: Enable ATX and setext heading detection.
             When ``False``, the entire document is returned as a single section.
+        source_title: Human-readable source title for heading qualification.
 
     Returns:
         List of Section dataclass instances. Returns a single Section with
@@ -123,7 +133,19 @@ def chunk_text(
             heading_path_parts.append("")
         heading_path_parts[level - 1] = text
 
-        heading_path = " > ".join(p for p in heading_path_parts if p)
+        from knowledge.normalize import normalize_heading, qualify_heading
+
+        cleaned_parts: list[str] = []
+        for i, part in enumerate(heading_path_parts):
+            if not part:
+                cleaned_parts.append(part)
+                continue
+            norm = normalize_heading(part)
+            if i == 0 and source_title:
+                norm = qualify_heading(source_title, norm, is_top_level=True)
+            cleaned_parts.append(norm)
+
+        heading_path = " > ".join(p for p in cleaned_parts if p)
 
         if idx + 1 < len(boundaries):
             body_end = boundaries[idx + 1][0]

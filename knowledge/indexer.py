@@ -213,7 +213,13 @@ def _index_source(
     for fpath in files:
         try:
             rel = str(fpath.relative_to(source_dir))
-            sections = chunk_file(fpath, source.name, source.category, rel_path=rel)
+            sections = chunk_file(
+                fpath,
+                source.name,
+                source.category,
+                rel_path=rel,
+                source_title=source.title or source.name,
+            )
             all_sections.extend(sections)
         except Exception as e:
             if verbose:
